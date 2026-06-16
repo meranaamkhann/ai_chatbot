@@ -1,93 +1,244 @@
-from flask import Flask, request, jsonify, render_template, session
-from flask_cors import CORS
-from dotenv import load_dotenv
-import os
-import google.generativeai as genai
+"""
+AI Healthcare Chatbot
+----------------------
+A Flask web app that provides a context-aware chat experience backed by
+Google's Gemini models, via the official `google-genai` SDK.
 
-# Load environment variables
+Important: this assistant provides general informational support only.
+It is not a substitute for professional medical advice, diagnosis, or
+treatment. Users should always consult a qualified healthcare provider
+with questions about a medical condition.
+"""
+
+import logging
+import os
+import uuid
+from datetime import datetime, timedelta, timezone
+
+from dotenv import load_dotenv
+from flask import Flask, jsonify, render_template, request, session
+from flask_cors import CORS
+from flask_limiter import Limiter
+from flask_limiter.util import get_remote_address
+from google import genai
+from google.genai import errors as genai_errors
+
 load_dotenv()
 
-# Configure Gemini API
-api_key = os.getenv("GEMINI_API_KEY")
-if not api_key:
-    raise RuntimeError("GEMINI_API_KEY not found in .env file!")
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
-genai.configure(api_key=api_key)
+# ---------------------------------------------------------------------------
+# Configuration
+# ---------------------------------------------------------------------------
 
-# Create Flask app
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-3.5-flash")
+SECRET_KEY = os.getenv("FLASK_SECRET_KEY")
+ALLOWED_ORIGINS = os.getenv("ALLOWED_ORIGINS", "").split(",") if os.getenv("ALLOWED_ORIGINS") else []
+
+MAX_MESSAGE_LENGTH = 2000
+MAX_HISTORY_MESSAGES = 20  # keep the last N messages (user + assistant combined)
+SESSION_LIFETIME_HOURS = 12
+
+DISCLAIMER = (
+    "I'm an AI assistant providing general health information only. "
+    "I'm not a doctor, and this is not a substitute for professional medical "
+    "advice, diagnosis, or treatment. Please consult a qualified healthcare "
+    "provider for any medical concerns, and seek emergency care for urgent "
+    "symptoms."
+)
+
+SYSTEM_INSTRUCTION = (
+    "You are a polite, concise healthcare information assistant. "
+    "You provide general, educational health information only — you do not "
+    "diagnose conditions, prescribe treatment, or recommend specific "
+    "medication dosages. For anything serious, urgent, or specific to the "
+    "user's individual situation, clearly recommend they consult a licensed "
+    "healthcare professional or, for emergencies, contact local emergency "
+    "services. Stay consistent in language throughout the conversation: if "
+    "the user writes in Hindi, continue in Hindi; if in English, continue in "
+    "English."
+)
+
+if not GEMINI_API_KEY:
+    raise RuntimeError(
+        "GEMINI_API_KEY is not set. Create a .env file (see .env.example) "
+        "with your Gemini API key before starting the app."
+    )
+
+if not SECRET_KEY:
+    raise RuntimeError(
+        "FLASK_SECRET_KEY is not set. Generate one with "
+        "`python -c \"import secrets; print(secrets.token_hex(32))\"` "
+        "and add it to your .env file."
+    )
+
+client = genai.Client(api_key=GEMINI_API_KEY)
+
+# ---------------------------------------------------------------------------
+# App setup
+# ---------------------------------------------------------------------------
+
 app = Flask(__name__)
-app.secret_key = "asad_secret_key"  # required for session-based chat history
-CORS(app)
+app.secret_key = SECRET_KEY
+app.config["PERMANENT_SESSION_LIFETIME"] = timedelta(hours=SESSION_LIFETIME_HOURS)
+app.config["SESSION_COOKIE_HTTPONLY"] = True
+app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
+# Set SESSION_COOKIE_SECURE=true in production when served over HTTPS.
+app.config["SESSION_COOKIE_SECURE"] = os.getenv("SESSION_COOKIE_SECURE", "false").lower() == "true"
 
-# Store chat history in session
-@app.before_request
-def ensure_chat_history():
-    if "chat_history" not in session:
-        session["chat_history"] = []
-    if "preferred_lang" not in session:
-        session["preferred_lang"] = None
+if ALLOWED_ORIGINS:
+    CORS(app, origins=ALLOWED_ORIGINS, supports_credentials=True)
+else:
+    logger.warning(
+        "ALLOWED_ORIGINS not set - CORS is disabled for cross-origin requests. "
+        "Same-origin requests (the bundled frontend) still work normally."
+    )
 
-@app.route('/')
+limiter = Limiter(
+    get_remote_address,
+    app=app,
+    default_limits=["60 per hour"],
+    storage_uri="memory://",
+)
+
+# In-memory, server-side chat store: { session_id: {"history": [...], "lang": str, "expires_at": datetime} }
+# NOTE: this resets on restart and isn't shared across multiple worker processes.
+# For real multi-worker / multi-instance deployment, replace this with Redis
+# or another shared store (see README "Scaling Beyond a Single Process").
+_chat_store: dict[str, dict] = {}
+
+
+def _prune_expired_sessions() -> None:
+    now = datetime.now(timezone.utc)
+    expired = [sid for sid, data in _chat_store.items() if data["expires_at"] < now]
+    for sid in expired:
+        _chat_store.pop(sid, None)
+
+
+def get_session_data() -> dict:
+    """Fetch (or create) this browser session's server-side chat record."""
+    session.permanent = True
+
+    if "session_id" not in session:
+        session["session_id"] = str(uuid.uuid4())
+
+    sid = session["session_id"]
+    _prune_expired_sessions()
+
+    if sid not in _chat_store:
+        _chat_store[sid] = {
+            "history": [],
+            "lang": None,
+            "expires_at": datetime.now(timezone.utc) + timedelta(hours=SESSION_LIFETIME_HOURS),
+        }
+
+    return _chat_store[sid]
+
+
+# ---------------------------------------------------------------------------
+# Routes
+# ---------------------------------------------------------------------------
+
+@app.route("/")
 def home():
-    return render_template('index.html')
+    return render_template("index.html", disclaimer=DISCLAIMER)
 
 
-@app.route('/chat', methods=['POST'])
+@app.route("/health")
+def health():
+    return jsonify({"status": "healthy"}), 200
+
+
+@app.route("/chat", methods=["POST"])
+@limiter.limit("15 per minute")
 def chat():
+    if not request.is_json:
+        return jsonify({"error": "Request body must be JSON"}), 415
+
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify({"error": "Request body must be a JSON object"}), 400
+
+    user_message = str(data.get("message", "")).strip()
+    requested_lang = data.get("lang", "en")
+
+    if not user_message:
+        return jsonify({"error": "Message is required"}), 400
+
+    if len(user_message) > MAX_MESSAGE_LENGTH:
+        return jsonify({
+            "error": f"Message is too long (max {MAX_MESSAGE_LENGTH} characters)"
+        }), 400
+
+    chat_data = get_session_data()
+
+    # Lock in the language from the first message; ignore later overrides.
+    if chat_data["lang"] is None:
+        chat_data["lang"] = requested_lang
+
+    chat_data["history"].append({"role": "user", "content": user_message})
+    # Trim history so the prompt (and token cost) doesn't grow unbounded.
+    chat_data["history"] = chat_data["history"][-MAX_HISTORY_MESSAGES:]
+
+    conversation = "\n".join(
+        f"{msg['role'].capitalize()}: {msg['content']}" for msg in chat_data["history"]
+    )
+    prompt = f"Conversation so far:\n{conversation}\nAssistant:"
+
     try:
-        data = request.get_json()
-        user_message = data.get("message", "").strip()
-        lang = data.get("lang", "en")
-
-        if not user_message:
-            return jsonify({"error": "Message is required"}), 400
-
-        # Detect or maintain the conversation language
-        if session["preferred_lang"] is None:
-            session["preferred_lang"] = lang
-        else:
-            lang = session["preferred_lang"]
-
-        # Append user message to history
-        session["chat_history"].append({"role": "user", "content": user_message})
-
-        # Prepare full conversation for context
-        conversation = "\n".join(
-            [f"{msg['role'].capitalize()}: {msg['content']}" for msg in session["chat_history"]]
+        response = client.models.generate_content(
+            model=GEMINI_MODEL,
+            contents=prompt,
+            config={"system_instruction": SYSTEM_INSTRUCTION},
         )
+        reply = (response.text or "").strip()
+        if not reply:
+            reply = "Sorry, I wasn't able to generate a response. Could you rephrase that?"
 
-        # Create Gemini model
-        model = genai.GenerativeModel("gemini-2.0-flash")
+    except genai_errors.APIError:
+        logger.exception("Gemini API error while handling /chat request")
+        return jsonify({
+            "error": "The assistant is temporarily unavailable. Please try again shortly."
+        }), 503
+    except Exception:
+        logger.exception("Unexpected error while handling /chat request")
+        return jsonify({"error": "Something went wrong. Please try again."}), 500
 
-        # Build prompt
-        prompt = (
-            "You are a polite, concise healthcare assistant. "
-            "Stay consistent in language throughout the conversation. "
-            "If the first message is in Hindi, continue in Hindi. "
-            "If in English, continue in English.\n\n"
-            f"Conversation so far:\n{conversation}\nAssistant:"
-        )
+    chat_data["history"].append({"role": "assistant", "content": reply})
+    chat_data["history"] = chat_data["history"][-MAX_HISTORY_MESSAGES:]
+    chat_data["expires_at"] = datetime.now(timezone.utc) + timedelta(hours=SESSION_LIFETIME_HOURS)
 
-        # Generate response
-        response = model.generate_content(prompt)
-        reply = response.text.strip()
-
-        # Append assistant's reply
-        session["chat_history"].append({"role": "assistant", "content": reply})
-        session.modified = True
-
-        return jsonify({"reply": reply})
-
-    except Exception as e:
-        return jsonify({"error": f"Server error: {str(e)}"}), 500
+    return jsonify({"reply": reply})
 
 
-@app.route('/clear_history', methods=['POST'])
+@app.route("/clear_history", methods=["POST"])
 def clear_history():
-    session.pop("chat_history", None)
-    session.pop("preferred_lang", None)
+    sid = session.get("session_id")
+    if sid:
+        _chat_store.pop(sid, None)
+    session.pop("session_id", None)
     return jsonify({"message": "Chat history cleared successfully."})
 
 
-if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000, debug=True)
+@app.errorhandler(404)
+def not_found(_error):
+    return jsonify({"error": "Not found"}), 404
+
+
+@app.errorhandler(429)
+def rate_limited(_error):
+    return jsonify({"error": "Too many requests. Please slow down and try again shortly."}), 429
+
+
+@app.errorhandler(500)
+def internal_error(_error):
+    return jsonify({"error": "Internal server error"}), 500
+
+
+if __name__ == "__main__":
+    debug_mode = os.environ.get("FLASK_DEBUG", "false").lower() == "true"
+    port = int(os.environ.get("PORT", 5000))
+    host = os.environ.get("HOST", "127.0.0.1")
+    app.run(host=host, port=port, debug=debug_mode)
