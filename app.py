@@ -1,13 +1,19 @@
 """
-AI Healthcare Chatbot
-----------------------
-A Flask web app that provides a context-aware chat experience backed by
-Google's Gemini models, via the official `google-genai` SDK.
+Sibbu — AI Healthcare Assistant
+---------------------------------
+A Flask web app that provides a context-aware, health-domain-restricted
+chat experience backed by Google's Gemini models via the official
+`google-genai` SDK.
 
-Important: this assistant provides general informational support only.
-It is not a substitute for professional medical advice, diagnosis, or
-treatment. Users should always consult a qualified healthcare provider
-with questions about a medical condition.
+Sibbu only answers health and medical questions. Anything else receives a
+fixed, friendly redirect rather than an LLM-generated answer, and anything
+resembling a medical emergency receives an immediate safety message instead
+of a normal conversational reply.
+
+Sibbu provides general informational support only. It is not a substitute
+for professional medical advice, diagnosis, or treatment. Users should
+always consult a qualified healthcare provider with questions about a
+medical condition.
 """
 
 import logging
@@ -22,6 +28,9 @@ from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 from google import genai
 from google.genai import errors as genai_errors
+
+import branding
+from domain_guard import Topic, classify_message
 
 load_dotenv()
 
@@ -41,23 +50,19 @@ MAX_MESSAGE_LENGTH = 2000
 MAX_HISTORY_MESSAGES = 20  # keep the last N messages (user + assistant combined)
 SESSION_LIFETIME_HOURS = 12
 
-DISCLAIMER = (
-    "I'm an AI assistant providing general health information only. "
-    "I'm not a doctor, and this is not a substitute for professional medical "
-    "advice, diagnosis, or treatment. Please consult a qualified healthcare "
-    "provider for any medical concerns, and seek emergency care for urgent "
-    "symptoms."
-)
-
 SYSTEM_INSTRUCTION = (
-    "You are a polite, concise healthcare information assistant. "
-    "You provide general, educational health information only — you do not "
-    "diagnose conditions, prescribe treatment, or recommend specific "
-    "medication dosages. For anything serious, urgent, or specific to the "
-    "user's individual situation, clearly recommend they consult a licensed "
-    "healthcare professional or, for emergencies, contact local emergency "
-    "services. Stay consistent in language throughout the conversation: if "
-    "the user writes in Hindi, continue in Hindi; if in English, continue in "
+    f"You are {branding.BRAND_NAME}, a polite, concise healthcare information "
+    "assistant. You ONLY discuss health, medical, wellness, nutrition, "
+    "fitness, and mental health topics. You provide general, educational "
+    "information only — you do not diagnose conditions, prescribe "
+    "treatment, or recommend specific medication dosages. For anything "
+    "serious, urgent, or specific to the user's individual situation, "
+    "clearly recommend they consult a licensed healthcare professional. "
+    "If the user asks about anything unrelated to health or medicine, "
+    "politely decline and redirect them to ask a health-related question "
+    "instead — do not answer the off-topic request even partially. Stay "
+    "consistent in language throughout the conversation: if the user "
+    "writes in Hindi, continue in Hindi; if in English, continue in "
     "English."
 )
 
@@ -137,13 +142,26 @@ def get_session_data() -> dict:
     return _chat_store[sid]
 
 
+def _record_turn(chat_data: dict, role: str, content: str) -> None:
+    chat_data["history"].append({"role": role, "content": content})
+    chat_data["history"] = chat_data["history"][-MAX_HISTORY_MESSAGES:]
+    chat_data["expires_at"] = datetime.now(timezone.utc) + timedelta(hours=SESSION_LIFETIME_HOURS)
+
+
 # ---------------------------------------------------------------------------
 # Routes
 # ---------------------------------------------------------------------------
 
 @app.route("/")
 def home():
-    return render_template("index.html", disclaimer=DISCLAIMER)
+    return render_template(
+        "index.html",
+        brand_name=branding.BRAND_NAME,
+        brand_tagline=branding.BRAND_TAGLINE,
+        brand_greeting=branding.BRAND_GREETING,
+        disclaimer=branding.DISCLAIMER,
+        accent_color=branding.ACCENT_COLOR,
+    )
 
 
 @app.route("/health")
@@ -178,9 +196,24 @@ def chat():
     if chat_data["lang"] is None:
         chat_data["lang"] = requested_lang
 
-    chat_data["history"].append({"role": "user", "content": user_message})
-    # Trim history so the prompt (and token cost) doesn't grow unbounded.
-    chat_data["history"] = chat_data["history"][-MAX_HISTORY_MESSAGES:]
+    # --- Domain guard: keep Sibbu strictly on health/medical topics -----
+    guard_result = classify_message(user_message, client=client, model=GEMINI_MODEL)
+    logger.info("Message classified as %s (%s)", guard_result.topic, guard_result.reason)
+
+    if guard_result.topic == Topic.EMERGENCY:
+        reply = branding.EMERGENCY_MESSAGE
+        _record_turn(chat_data, "user", user_message)
+        _record_turn(chat_data, "assistant", reply)
+        return jsonify({"reply": reply, "topic": "emergency"})
+
+    if guard_result.topic == Topic.OFF_TOPIC:
+        reply = branding.OFF_TOPIC_MESSAGE
+        _record_turn(chat_data, "user", user_message)
+        _record_turn(chat_data, "assistant", reply)
+        return jsonify({"reply": reply, "topic": "off_topic"})
+
+    # --- In-scope health question: generate a real response -------------
+    _record_turn(chat_data, "user", user_message)
 
     conversation = "\n".join(
         f"{msg['role'].capitalize()}: {msg['content']}" for msg in chat_data["history"]
@@ -206,11 +239,9 @@ def chat():
         logger.exception("Unexpected error while handling /chat request")
         return jsonify({"error": "Something went wrong. Please try again."}), 500
 
-    chat_data["history"].append({"role": "assistant", "content": reply})
-    chat_data["history"] = chat_data["history"][-MAX_HISTORY_MESSAGES:]
-    chat_data["expires_at"] = datetime.now(timezone.utc) + timedelta(hours=SESSION_LIFETIME_HOURS)
+    _record_turn(chat_data, "assistant", reply)
 
-    return jsonify({"reply": reply})
+    return jsonify({"reply": reply, "topic": "health"})
 
 
 @app.route("/clear_history", methods=["POST"])
