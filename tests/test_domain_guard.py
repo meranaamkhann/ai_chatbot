@@ -92,6 +92,66 @@ def test_health_keyword_with_no_off_topic_overlap():
     assert result.topic == Topic.HEALTH
 
 
+def test_simple_greeting_hello():
+    result = classify_message("Hello")
+    assert result.topic == Topic.GREETING
+    assert result.reason == "keyword_pass"
+
+
+def test_simple_greeting_hi_with_punctuation():
+    result = classify_message("hi!")
+    assert result.topic == Topic.GREETING
+
+
+def test_greeting_hey_there():
+    result = classify_message("hey there")
+    assert result.topic == Topic.GREETING
+
+
+def test_greeting_good_morning():
+    result = classify_message("Good morning!")
+    assert result.topic == Topic.GREETING
+
+
+def test_greeting_how_are_you():
+    result = classify_message("how are you?")
+    assert result.topic == Topic.GREETING
+
+
+def test_greeting_thanks():
+    result = classify_message("thank you")
+    assert result.topic == Topic.GREETING
+
+
+def test_greeting_who_are_you():
+    result = classify_message("who are you?")
+    assert result.topic == Topic.GREETING
+
+
+def test_greeting_what_can_you_do():
+    result = classify_message("what can you do?")
+    assert result.topic == Topic.GREETING
+
+
+def test_greeting_does_not_match_real_health_question():
+    # "hi" appears nowhere, but make sure a real health question
+    # containing a greeting-ish word isn't accidentally swept up.
+    result = classify_message("Hi, I have a really bad headache, what should I do?")
+    assert result.topic == Topic.HEALTH
+
+
+def test_llm_fallback_greeting():
+    mock_client = MagicMock()
+    mock_response = MagicMock()
+    mock_response.text = "GREETING"
+    mock_client.models.generate_content.return_value = mock_response
+
+    result = classify_message(
+        "ambiguous message with no keywords", client=mock_client, model="test-model"
+    )
+    assert result.topic == Topic.GREETING
+
+
 def test_mixed_keywords_detected_as_unsure_by_keyword_pass():
     # Contains both a health keyword and an off-topic keyword -> ambiguous
     # at the keyword-pass level, even though classify_message() without a

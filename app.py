@@ -206,6 +206,12 @@ def chat():
         _record_turn(chat_data, "assistant", reply)
         return jsonify({"reply": reply, "topic": "emergency"})
 
+    if guard_result.topic == Topic.GREETING:
+        reply = branding.GREETING_REPLY
+        _record_turn(chat_data, "user", user_message)
+        _record_turn(chat_data, "assistant", reply)
+        return jsonify({"reply": reply, "topic": "greeting"})
+
     if guard_result.topic == Topic.OFF_TOPIC:
         reply = branding.OFF_TOPIC_MESSAGE
         _record_turn(chat_data, "user", user_message)
