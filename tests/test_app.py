@@ -64,6 +64,21 @@ def test_chat_off_topic_question_gets_default_message(client):
     assert data["reply"] == branding.OFF_TOPIC_MESSAGE
 
 
+def test_chat_greeting_gets_friendly_reply_not_rejection(client):
+    response = client.post("/chat", json={"message": "Hello"})
+    assert response.status_code == 200
+    data = response.get_json()
+    assert data["topic"] == "greeting"
+    assert data["reply"] == branding.GREETING_REPLY
+    assert "Sorry, I can only answer" not in data["reply"]
+
+
+def test_chat_greeting_does_not_call_gemini(client, app_module):
+    app_module.client.models.generate_content.reset_mock()
+    client.post("/chat", json={"message": "hi there"})
+    app_module.client.models.generate_content.assert_not_called()
+
+
 def test_chat_off_topic_does_not_call_gemini_for_main_reply(client, app_module):
     app_module.client.models.generate_content.reset_mock()
     client.post("/chat", json={"message": "Write a poem about the ocean"})

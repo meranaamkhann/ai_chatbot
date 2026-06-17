@@ -42,6 +42,13 @@ OFF_TOPIC_MESSAGE = os.getenv(
     "wellness I can help you with?",
 )
 
+GREETING_REPLY = os.getenv(
+    "BRAND_GREETING_REPLY",
+    "Hello! I'm {brand_name}, your AI healthcare assistant. I can help "
+    "with questions about symptoms, conditions, medications, nutrition, "
+    "and general wellness. What would you like to know?",
+).format(brand_name=BRAND_NAME)
+
 EMERGENCY_MESSAGE = os.getenv(
     "BRAND_EMERGENCY_MESSAGE",
     "This sounds like it could be a medical emergency. Please contact your "
