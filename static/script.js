@@ -3,15 +3,17 @@ const historyBox = document.getElementById("history");
 const chatForm = document.getElementById("chat-form");
 const userInput = document.getElementById("user-input");
 const sendBtn = document.getElementById("send-btn");
-const clearBtn = document.getElementById("clear-btn");
+const newChatBtn = document.getElementById("new-chat-btn");
 const errorBanner = document.getElementById("error-banner");
+
+const GREETING_HTML = chatBox.innerHTML;
 
 chatForm.addEventListener("submit", (event) => {
   event.preventDefault();
   sendMessage();
 });
 
-clearBtn.addEventListener("click", clearHistory);
+newChatBtn.addEventListener("click", startNewChat);
 
 function setBusy(isBusy) {
   sendBtn.disabled = isBusy;
@@ -54,7 +56,8 @@ async function sendMessage() {
       return;
     }
 
-    displayMessage("bot", data.reply || "Sorry, I couldn't process that.");
+    const variant = data.topic === "emergency" ? "bot emergency" : "bot";
+    displayMessage(variant, data.reply || "Sorry, I couldn't process that.");
   } catch (err) {
     typingEl.remove();
     showError("Couldn't reach the server. Check your connection and try again.");
@@ -75,19 +78,18 @@ function displayMessage(role, text) {
 
 function updateSidebar(message) {
   const item = document.createElement("p");
-  item.textContent = message.length > 30 ? message.slice(0, 30) + "…" : message;
-  historyBox.appendChild(item);
+  item.textContent = message.length > 36 ? message.slice(0, 36) + "…" : message;
+  historyBox.insertBefore(item, historyBox.firstChild);
 }
 
-async function clearHistory() {
+async function startNewChat() {
   hideError();
   try {
     await fetch("/clear_history", { method: "POST" });
   } catch (err) {
     showError("Couldn't clear the chat on the server, but the screen has been reset.");
   }
-  chatBox.innerHTML =
-    '<div class="message bot">👩\u200d⚕️ Hello! I\'m your healthcare assistant. How can I help you today?</div>';
+  chatBox.innerHTML = GREETING_HTML;
   historyBox.innerHTML = "";
   userInput.focus();
 }

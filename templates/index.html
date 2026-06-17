@@ -3,38 +3,75 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>AI Healthcare Assistant</title>
+  <title>{{ brand_name }} — {{ brand_tagline }}</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}" />
+  <style>
+    :root { --accent: {{ accent_color }}; }
+  </style>
 </head>
 <body>
-  <div class="sidebar">
-    <h2>🩺 HealthBot</h2>
-    <button id="clear-btn" type="button">Clear Chat</button>
-    <div class="history" id="history" aria-live="polite"></div>
-  </div>
+  <div class="app">
+    <aside class="sidebar">
+      <div class="brand">
+        <span class="brand-mark" aria-hidden="true">+</span>
+        <div>
+          <p class="brand-name">{{ brand_name }}</p>
+          <p class="brand-tagline">{{ brand_tagline }}</p>
+        </div>
+      </div>
 
-  <div class="main">
-    <div class="disclaimer">
-      ⚠️ {{ disclaimer }}
-    </div>
+      <button id="new-chat-btn" type="button" class="new-chat-btn">
+        <span aria-hidden="true">＋</span> New conversation
+      </button>
 
-    <div class="chat-box" id="chat-box" aria-live="polite">
-      <div class="message bot">👩‍⚕️ Hello! I'm your healthcare assistant. How can I help you today?</div>
-    </div>
+      <div class="topics">
+        <p class="topics-label">I can help with</p>
+        <ul>
+          <li>Symptoms &amp; conditions</li>
+          <li>Medications &amp; dosage info</li>
+          <li>Nutrition &amp; fitness</li>
+          <li>Mental health &amp; wellness</li>
+          <li>When to see a doctor</li>
+        </ul>
+      </div>
 
-    <div id="error-banner" class="error-banner" role="alert" hidden></div>
+      <div class="history-panel">
+        <p class="topics-label">Recent questions</p>
+        <div class="history" id="history" aria-live="polite"></div>
+      </div>
+    </aside>
 
-    <form class="input-area" id="chat-form">
-      <input
-        type="text"
-        id="user-input"
-        placeholder="Type your message..."
-        maxlength="2000"
-        autocomplete="off"
-        aria-label="Type your message"
-      />
-      <button type="submit" id="send-btn">Send</button>
-    </form>
+    <main class="main">
+      <header class="topbar">
+        <div>
+          <p class="topbar-title">Health assistant</p>
+          <p class="topbar-status"><span class="status-dot" aria-hidden="true"></span>Online</p>
+        </div>
+      </header>
+
+      <div class="disclaimer" role="note">
+        <strong>Please note:</strong> {{ disclaimer }}
+      </div>
+
+      <div class="chat-box" id="chat-box" aria-live="polite">
+        <div class="message bot">{{ brand_greeting }}</div>
+      </div>
+
+      <div id="error-banner" class="error-banner" role="alert" hidden></div>
+
+      <form class="input-area" id="chat-form">
+        <input
+          type="text"
+          id="user-input"
+          placeholder="Ask about a symptom, condition, or medication..."
+          maxlength="2000"
+          autocomplete="off"
+          aria-label="Type your health question"
+        />
+        <button type="submit" id="send-btn" aria-label="Send message">Send</button>
+      </form>
+      <p class="input-hint">{{ brand_name }} only answers health and medical questions.</p>
+    </main>
   </div>
 
   <script src="{{ url_for('static', filename='script.js') }}"></script>
