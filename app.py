@@ -17,21 +17,19 @@ medical condition.
 
 Routes
 ------
-  GET  /                       marketing landing page
-  GET  /app                    the chat application shell
-  GET  /health                 liveness/readiness probe
-  GET  /api/conversations      list this browser session's conversations
-  POST /api/conversations      start a new conversation, returns its id
-  DELETE /api/conversations/<id>   delete one conversation
-  GET  /api/conversations/<id> fetch one conversation's message history
-  POST /api/chat                classic (non-streaming) reply — used by tests
-                                 and as a graceful fallback if streaming fails
-  POST /api/chat/stream         Server-Sent-Events streaming reply (what the
-                                 UI actually uses — token-by-token like a
-                                 modern chat product, not a single blocking
-                                 response)
-  POST /api/session/reset       wipe every conversation in this browser
-                                 session (used by "Clear all chats")
+  GET  /                        marketing landing page
+  GET/POST /signup              create an account
+  GET/POST /login               log in
+  POST /logout                  log out
+  GET  /app                     the chat application (login required)
+  GET  /health                  liveness/readiness probe
+  GET  /api/conversations       list this user's conversations
+  POST /api/conversations       start a new conversation
+  GET  /api/conversations/<id>  fetch one conversation's history
+  DELETE /api/conversations/<id> delete one conversation
+  POST /api/session/reset       delete every conversation for this user
+  POST /api/chat                non-streaming reply (fallback + tests)
+  POST /api/chat/stream         Server-Sent-Events streaming reply
 """
 
 from __future__ import annotations
@@ -39,11 +37,20 @@ from __future__ import annotations
 import json
 import logging
 import os
-import uuid
+import time
 from datetime import timedelta
 
 from dotenv import load_dotenv
-from flask import Flask, Response, jsonify, render_template, request, session, stream_with_context
+from flask import (
+    Flask,
+    Response,
+    jsonify,
+    redirect,
+    render_template,
+    request,
+    stream_with_context,
+    url_for,
+)
 from flask_cors import CORS
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
@@ -51,13 +58,26 @@ from google import genai
 from google.genai import errors as genai_errors
 
 import branding
-from conversation_store import ConversationStore
+import conversation_store as store
+import observability
+from auth import (
+    AuthError,
+    api_login_required,
+    create_user,
+    current_user_id,
+    log_in_user,
+    log_out_user,
+    login_required,
+    verify_login,
+)
+from db import close_db, get_db, init_db
 from domain_guard import Topic, classify_message
+from gemini_client import generate_content_with_retry, start_stream_with_retry
 from security import apply_security_headers, csrf_token_is_valid, get_or_create_csrf_token
 
 load_dotenv()
 
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
@@ -66,15 +86,14 @@ logger = logging.getLogger(__name__)
 
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 # gemini-flash-lite-latest is the free-tier model with the most generous
-# per-day quota, which matters a lot when the whole point is "$0 to run".
-# Override with GEMINI_MODEL if you want a stronger (still-free) model like
-# gemini-3.5-flash — see .env.example for the trade-offs.
+# per-day quota. Override with GEMINI_MODEL for a stronger (still-free)
+# model — see .env.example for the trade-offs.
 GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-flash-lite-latest")
 SECRET_KEY = os.getenv("FLASK_SECRET_KEY")
 ALLOWED_ORIGINS = os.getenv("ALLOWED_ORIGINS", "").split(",") if os.getenv("ALLOWED_ORIGINS") else []
 
 MAX_MESSAGE_LENGTH = 2000
-SESSION_LIFETIME_HOURS = 12
+SESSION_LIFETIME_HOURS = 24 * 30  # logged-in sessions persist for a month
 
 SYSTEM_INSTRUCTION = (
     f"You are {branding.BRAND_NAME}, a polite, concise healthcare information "
@@ -118,8 +137,10 @@ app.secret_key = SECRET_KEY
 app.config["PERMANENT_SESSION_LIFETIME"] = timedelta(hours=SESSION_LIFETIME_HOURS)
 app.config["SESSION_COOKIE_HTTPONLY"] = True
 app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
-# Set SESSION_COOKIE_SECURE=true in production when served over HTTPS.
 app.config["SESSION_COOKIE_SECURE"] = os.getenv("SESSION_COOKIE_SECURE", "false").lower() == "true"
+
+init_db()
+app.teardown_appcontext(close_db)
 
 if ALLOWED_ORIGINS:
     CORS(app, origins=ALLOWED_ORIGINS, supports_credentials=True)
@@ -136,61 +157,50 @@ limiter = Limiter(
     storage_uri="memory://",
 )
 
-store = ConversationStore(session_lifetime_hours=SESSION_LIFETIME_HOURS)
+
+@app.before_request
+def _before_request():
+    observability.start_request_timer()
 
 
 @app.after_request
-def _security_headers(response):
-    return apply_security_headers(response)
-
-
-def _get_session_id() -> str:
-    session.permanent = True
-    if "session_id" not in session:
-        session["session_id"] = str(uuid.uuid4())
-    return session["session_id"]
+def _after_request(response):
+    response = apply_security_headers(response)
+    return observability.log_request_completed(response)
 
 
 def _require_csrf():
-    """Returns an error Response if the CSRF token is missing/invalid, else None."""
     if not csrf_token_is_valid(request):
         return jsonify({"error": "Invalid or missing CSRF token. Reload the page and try again."}), 403
     return None
 
 
-def _parse_chat_request():
-    """Shared validation for /api/chat and /api/chat/stream.
-
-    Returns (sid, conv, user_message, error_response). error_response is a
-    Flask response tuple if validation failed, otherwise None.
-    """
+def _parse_chat_request(user_id: str):
     if not request.is_json:
-        return None, None, None, (jsonify({"error": "Request body must be JSON"}), 415)
+        return None, None, (jsonify({"error": "Request body must be JSON"}), 415)
 
     data = request.get_json(silent=True)
     if not isinstance(data, dict):
-        return None, None, None, (jsonify({"error": "Request body must be a JSON object"}), 400)
+        return None, None, (jsonify({"error": "Request body must be a JSON object"}), 400)
 
     user_message = str(data.get("message", "")).strip()
     requested_lang = data.get("lang", "en")
     conv_id = data.get("conversation_id")
 
     if not user_message:
-        return None, None, None, (jsonify({"error": "Message is required"}), 400)
+        return None, None, (jsonify({"error": "Message is required"}), 400)
 
     if len(user_message) > MAX_MESSAGE_LENGTH:
-        return None, None, None, (
+        return None, None, (
             jsonify({"error": f"Message is too long (max {MAX_MESSAGE_LENGTH} characters)"}),
             400,
         )
 
-    sid = _get_session_id()
-    conv = store.get(sid, conv_id) if conv_id else None
-    if conv is None:
-        conv = store.new_conversation(sid)
+    if not conv_id or not store.owns_conversation(user_id, conv_id):
+        conv_id = store.new_conversation(user_id)["id"]
 
-    store.set_lang_if_unset(sid, conv.id, requested_lang)
-    return sid, conv, user_message, None
+    store.set_lang_if_unset(conv_id, requested_lang)
+    return conv_id, user_message, None
 
 
 def _build_prompt(history: list[dict], latest_user_message: str) -> str:
@@ -217,14 +227,65 @@ def landing():
         accent_color=branding.ACCENT_COLOR,
         suggested_prompts=branding.SUGGESTED_PROMPTS,
         repo_url=branding.REPO_URL,
+        is_logged_in=bool(current_user_id()),
     )
 
 
+@app.route("/signup", methods=["GET", "POST"])
+def signup_page():
+    if current_user_id():
+        return redirect(url_for("chat_app"))
+
+    error = None
+    if request.method == "POST":
+        try:
+            user_id = create_user(request.form.get("email", ""), request.form.get("password", ""))
+            log_in_user(user_id)
+            return redirect(url_for("chat_app"))
+        except AuthError as exc:
+            error = str(exc)
+
+    return render_template(
+        "auth.html", mode="signup", brand_name=branding.BRAND_NAME,
+        accent_color=branding.ACCENT_COLOR, error=error,
+    )
+
+
+@app.route("/login", methods=["GET", "POST"])
+def login_page():
+    if current_user_id():
+        return redirect(url_for("chat_app"))
+
+    error = None
+    if request.method == "POST":
+        try:
+            user_id = verify_login(request.form.get("email", ""), request.form.get("password", ""))
+            log_in_user(user_id)
+            next_path = request.args.get("next") or url_for("chat_app")
+            return redirect(next_path)
+        except AuthError as exc:
+            error = str(exc)
+
+    return render_template(
+        "auth.html", mode="login", brand_name=branding.BRAND_NAME,
+        accent_color=branding.ACCENT_COLOR, error=error,
+    )
+
+
+@app.route("/logout", methods=["POST"])
+def logout():
+    log_out_user()
+    return redirect(url_for("landing"))
+
+
 @app.route("/app")
+@login_required
 def chat_app():
-    sid = _get_session_id()
+    user_id = current_user_id()
     csrf_token = get_or_create_csrf_token()
-    conversations = store.list_conversations(sid)
+    conversations = store.list_conversations(user_id)
+    db = get_db()
+    email = db.execute("SELECT email FROM users WHERE id = ?", (user_id,)).fetchone()["email"]
     return render_template(
         "chat.html",
         brand_name=branding.BRAND_NAME,
@@ -235,12 +296,13 @@ def chat_app():
         suggested_prompts=branding.SUGGESTED_PROMPTS,
         csrf_token=csrf_token,
         conversations=conversations,
+        user_email=email,
     )
 
 
 @app.route("/health")
 def health():
-    return jsonify({"status": "healthy", "active_sessions": store.session_size()}), 200
+    return jsonify({"status": "healthy"}), 200
 
 
 # ---------------------------------------------------------------------------
@@ -248,46 +310,46 @@ def health():
 # ---------------------------------------------------------------------------
 
 @app.route("/api/conversations", methods=["GET"])
+@api_login_required
 def list_conversations():
-    sid = _get_session_id()
-    return jsonify({"conversations": store.list_conversations(sid)})
+    return jsonify({"conversations": store.list_conversations(current_user_id())})
 
 
 @app.route("/api/conversations", methods=["POST"])
+@api_login_required
 def create_conversation():
     csrf_error = _require_csrf()
     if csrf_error:
         return csrf_error
-    sid = _get_session_id()
-    conv = store.new_conversation(sid)
-    return jsonify(conv.to_summary()), 201
+    conv = store.new_conversation(current_user_id())
+    return jsonify(conv), 201
 
 
 @app.route("/api/conversations/<conv_id>", methods=["GET"])
+@api_login_required
 def get_conversation(conv_id):
-    sid = _get_session_id()
-    history = store.get_history(sid, conv_id)
-    return jsonify({"id": conv_id, "history": history})
+    if not store.owns_conversation(current_user_id(), conv_id):
+        return jsonify({"error": "Not found"}), 404
+    return jsonify({"id": conv_id, "history": store.get_history(conv_id, limit=None)})
 
 
 @app.route("/api/conversations/<conv_id>", methods=["DELETE"])
+@api_login_required
 def delete_conversation(conv_id):
     csrf_error = _require_csrf()
     if csrf_error:
         return csrf_error
-    sid = _get_session_id()
-    store.delete(sid, conv_id)
+    store.delete_conversation(current_user_id(), conv_id)
     return jsonify({"message": "Conversation deleted."})
 
 
 @app.route("/api/session/reset", methods=["POST"])
+@api_login_required
 def reset_session():
     csrf_error = _require_csrf()
     if csrf_error:
         return csrf_error
-    sid = session.get("session_id")
-    if sid:
-        store.clear_session(sid)
+    store.clear_user_conversations(current_user_id())
     return jsonify({"message": "All conversations cleared."})
 
 
@@ -296,69 +358,71 @@ def reset_session():
 # ---------------------------------------------------------------------------
 
 @app.route("/api/chat", methods=["POST"])
+@api_login_required
 @limiter.limit("15 per minute")
 def chat():
     csrf_error = _require_csrf()
     if csrf_error:
         return csrf_error
 
-    sid, conv, user_message, error = _parse_chat_request()
+    user_id = current_user_id()
+    conv_id, user_message, error = _parse_chat_request(user_id)
     if error:
         return error
 
     guard_result = classify_message(user_message, client=client, model=GEMINI_MODEL)
+    observability.record_topic(guard_result.topic.value)
     logger.info("Message classified as %s (%s)", guard_result.topic, guard_result.reason)
 
-    if guard_result.topic == Topic.EMERGENCY:
-        reply = branding.EMERGENCY_MESSAGE
-    elif guard_result.topic == Topic.GREETING:
-        reply = branding.GREETING_REPLY
-    elif guard_result.topic == Topic.OFF_TOPIC:
-        reply = branding.OFF_TOPIC_MESSAGE
-    else:
-        reply = None
+    canned = {
+        Topic.EMERGENCY: branding.EMERGENCY_MESSAGE,
+        Topic.GREETING: branding.GREETING_REPLY,
+        Topic.OFF_TOPIC: branding.OFF_TOPIC_MESSAGE,
+    }.get(guard_result.topic)
 
-    if reply is not None:
-        store.record_turn(sid, conv.id, "user", user_message)
-        store.record_turn(sid, conv.id, "assistant", reply)
-        return jsonify({"reply": reply, "topic": guard_result.topic.value, "conversation_id": conv.id})
+    if canned is not None:
+        store.record_turn(conv_id, "user", user_message)
+        store.record_turn(conv_id, "assistant", canned)
+        return jsonify({"reply": canned, "topic": guard_result.topic.value, "conversation_id": conv_id})
 
-    store.record_turn(sid, conv.id, "user", user_message)
-    prompt = _build_prompt(store.get_history(sid, conv.id), user_message)
+    store.record_turn(conv_id, "user", user_message)
+    prompt = _build_prompt(store.get_history(conv_id), user_message)
 
+    model_started = time.perf_counter()
     try:
-        response = client.models.generate_content(
-            model=GEMINI_MODEL,
-            contents=prompt,
-            config={"system_instruction": SYSTEM_INSTRUCTION},
+        response = generate_content_with_retry(
+            client, model=GEMINI_MODEL, contents=prompt, config={"system_instruction": SYSTEM_INSTRUCTION}
         )
-        reply = (response.text or "").strip()
-        if not reply:
-            reply = "Sorry, I wasn't able to generate a response. Could you rephrase that?"
+        reply = (response.text or "").strip() or "Sorry, I wasn't able to generate a response. Could you rephrase that?"
     except genai_errors.APIError:
         logger.exception("Gemini API error while handling /api/chat request")
         return jsonify({"error": "The assistant is temporarily unavailable. Please try again shortly."}), 503
     except Exception:
         logger.exception("Unexpected error while handling /api/chat request")
         return jsonify({"error": "Something went wrong. Please try again."}), 500
+    finally:
+        observability.record_model_latency(model_started)
 
-    store.record_turn(sid, conv.id, "assistant", reply)
-    return jsonify({"reply": reply, "topic": "health", "conversation_id": conv.id})
+    store.record_turn(conv_id, "assistant", reply)
+    return jsonify({"reply": reply, "topic": "health", "conversation_id": conv_id})
 
 
 @app.route("/api/chat/stream", methods=["POST"])
+@api_login_required
 @limiter.limit("15 per minute")
 def chat_stream():
     csrf_error = _require_csrf()
     if csrf_error:
         return csrf_error
 
-    sid, conv, user_message, error = _parse_chat_request()
+    user_id = current_user_id()
+    conv_id, user_message, error = _parse_chat_request(user_id)
     if error:
         body, status = error
         return body, status
 
     guard_result = classify_message(user_message, client=client, model=GEMINI_MODEL)
+    observability.record_topic(guard_result.topic.value)
     logger.info("Message classified as %s (%s)", guard_result.topic, guard_result.reason)
 
     canned_reply = {
@@ -367,11 +431,9 @@ def chat_stream():
         Topic.OFF_TOPIC: branding.OFF_TOPIC_MESSAGE,
     }.get(guard_result.topic)
 
-    conv_id = conv.id
-
     if canned_reply is not None:
-        store.record_turn(sid, conv_id, "user", user_message)
-        store.record_turn(sid, conv_id, "assistant", canned_reply)
+        store.record_turn(conv_id, "user", user_message)
+        store.record_turn(conv_id, "assistant", canned_reply)
 
         def canned_gen():
             yield _sse("meta", {"conversation_id": conv_id, "topic": guard_result.topic.value})
@@ -380,19 +442,25 @@ def chat_stream():
 
         return Response(stream_with_context(canned_gen()), mimetype="text/event-stream")
 
-    store.record_turn(sid, conv_id, "user", user_message)
-    prompt = _build_prompt(store.get_history(sid, conv_id), user_message)
+    store.record_turn(conv_id, "user", user_message)
+    prompt = _build_prompt(store.get_history(conv_id), user_message)
+    model_started = time.perf_counter()
 
     def generate():
         yield _sse("meta", {"conversation_id": conv_id, "topic": "health"})
         collected = []
         try:
-            stream = client.models.generate_content_stream(
-                model=GEMINI_MODEL,
-                contents=prompt,
-                config={"system_instruction": SYSTEM_INSTRUCTION},
+            first_chunk, rest = start_stream_with_retry(
+                client, model=GEMINI_MODEL, contents=prompt, config={"system_instruction": SYSTEM_INSTRUCTION}
             )
-            for chunk in stream:
+            observability.record_model_latency(model_started)
+
+            def _all_chunks():
+                if first_chunk is not None:
+                    yield first_chunk
+                yield from rest
+
+            for chunk in _all_chunks():
                 text = getattr(chunk, "text", None)
                 if text:
                     collected.append(text)
@@ -410,7 +478,7 @@ def chat_stream():
         if not reply:
             reply = "Sorry, I wasn't able to generate a response. Could you rephrase that?"
             yield _sse("token", reply)
-        store.record_turn(sid, conv_id, "assistant", reply)
+        store.record_turn(conv_id, "assistant", reply)
         yield _sse("done", {"topic": "health"})
 
     return Response(stream_with_context(generate()), mimetype="text/event-stream")

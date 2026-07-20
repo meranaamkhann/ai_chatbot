@@ -1,0 +1,120 @@
+body {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.auth-shell {
+  width: 100%;
+  max-width: 420px;
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 28px;
+}
+
+.auth-brand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 700;
+  font-size: 1.05rem;
+  text-decoration: none;
+  color: var(--ink);
+}
+
+.auth-brand svg {
+  color: var(--accent, var(--pulse));
+}
+
+.auth-card {
+  width: 100%;
+  background: var(--paper-raised);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-card);
+  padding: 36px 32px;
+}
+
+.auth-card h1 {
+  font-family: var(--font-display);
+  font-size: 1.6rem;
+  font-weight: 500;
+  margin: 0 0 8px;
+}
+
+.auth-sub {
+  color: var(--muted);
+  font-size: 0.9rem;
+  margin: 0 0 24px;
+  line-height: 1.5;
+}
+
+.auth-error {
+  background: var(--danger-bg);
+  border: 1px solid var(--danger-border);
+  color: var(--danger);
+  border-radius: var(--radius-sm);
+  padding: 10px 14px;
+  font-size: 0.85rem;
+  margin-bottom: 18px;
+}
+
+.auth-form {
+  display: flex;
+  flex-direction: column;
+}
+
+.auth-form label {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--ink-soft);
+  margin-bottom: 6px;
+}
+
+.auth-form input {
+  padding: 11px 13px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  font-size: 0.95rem;
+  font-family: inherit;
+  color: var(--ink);
+  background: var(--paper);
+  margin-bottom: 16px;
+}
+
+.auth-form input:focus {
+  outline: none;
+  border-color: var(--accent, var(--pulse));
+  box-shadow: 0 0 0 3px var(--pulse-soft);
+  background: var(--paper-raised);
+}
+
+.field-hint {
+  margin: -12px 0 16px;
+  font-size: 0.76rem;
+  color: var(--muted);
+}
+
+.auth-submit {
+  width: 100%;
+  justify-content: center;
+  border: none;
+  cursor: pointer;
+  margin-top: 6px;
+}
+
+.auth-switch {
+  text-align: center;
+  font-size: 0.86rem;
+  color: var(--muted);
+  margin: 20px 0 0;
+}
+
+.auth-switch a {
+  color: var(--accent, var(--pulse-dark));
+  text-decoration: none;
+  font-weight: 600;
+}

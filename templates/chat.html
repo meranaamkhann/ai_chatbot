@@ -40,8 +40,12 @@
       </div>
 
       <div class="sidebar-footer">
+        <p class="sidebar-user" title="{{ user_email }}">{{ user_email }}</p>
         <button id="clear-all-btn" type="button" class="text-btn">Clear all chats</button>
         <a href="/" class="text-btn">← Back home</a>
+        <form method="POST" action="/logout">
+          <button type="submit" class="text-btn logout-btn">Log out</button>
+        </form>
       </div>
     </aside>
 

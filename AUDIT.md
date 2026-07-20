@@ -165,3 +165,101 @@ When a single Render/Railway free instance stops being enough:
 2. Move `Limiter`'s `storage_uri` from `memory://` to the same Redis
    instance, so rate limits are consistent across processes/instances.
 3. Only then raise `--workers` above 1.
+
+---
+
+## Round 2: accounts, persistence, retries, observability, and a measured guard
+
+The first pass fixed the app's plumbing (concurrency, CSRF, streaming, no
+markdown). This pass targets what was still missing for "backend AI/ML
+engineer" work specifically: does it survive a restart, does it recover
+from a flaky upstream call, can you actually measure whether the safety
+classifier works, and can more than one person use it.
+
+### 11. No user accounts — conversations were tied to an anonymous browser session
+**Before:** anyone opening the app got an anonymous session; there was no
+way to log back in from a different device, and clearing cookies meant
+losing every conversation.
+**Fix:** `auth.py` — email/password accounts, hashed with
+`werkzeug.security.generate_password_hash` (PBKDF2-SHA256, already a Flask
+dependency — no new package for hashing). `/signup`, `/login`, `/logout`,
+and `/app` is now behind `@login_required`. Deliberately minimal: no OAuth,
+no email verification, no password reset. Those are real gaps for a
+production auth system — named here rather than silently omitted — and
+the natural next additions once this needs to be more than a portfolio
+deployment.
+
+### 12. In-memory conversation store — data died on every restart
+**Before:** even after Round 1's thread-safety fix, `ConversationStore`
+was still a Python dict in process memory. Any restart (a deploy, a crash,
+a free-tier idle spin-down) silently wiped every conversation for every
+user. That's a real data-loss bug, not just a scaling limitation.
+**Fix:** `db.py` + rewritten `conversation_store.py` — SQLite, a single
+file on disk, in the Python standard library (`sqlite3`), so this is a
+zero-cost change. Conversations and messages are now relational tables
+keyed by `user_id`, with a foreign key and `ON DELETE CASCADE` so deleting
+a user's account (were that feature added) can't orphan rows. Verified
+with a regression test (`test_persists_across_reconnect`) that tears down
+and reopens the DB connection mid-test and asserts the data is still
+there — the literal scenario that used to lose data.
+**Honest caveat, not glossed over:** Render's free web-service tier has an
+*ephemeral* filesystem — it persists while the instance stays warm, but a
+redeploy or a free-tier idle spin-down still wipes the SQLite file, same
+as before. This is a real limit of "$0 hosting," not something this fix
+silently claims to solve. `.env.example` documents the workaround (a small
+free persistent volume on Railway/Fly, or a free hosted Postgres like Neon)
+for anyone who needs durability past a single Render instance's lifetime.
+
+### 13. No retry on transient Gemini failures
+**Before:** a single 503 or dropped connection from Gemini was a failed
+reply shown to the user, full stop — no distinction between "the API key
+is wrong" (not worth retrying) and "the upstream hiccuped" (worth retrying).
+**Fix:** `gemini_client.py`, using `tenacity` (added as an explicit,
+pinned, free dependency — it was previously only an undeclared transitive
+dependency of `google-genai`, which is fragile to rely on). Retries on
+429/500/502/503/504 with exponential backoff, capped at 3 attempts;
+4xx auth/validation errors are not retried, since retrying a bad API key
+just burns quota on a guaranteed failure. For streaming specifically, only
+the attempt to fetch the *first* chunk is retried — once tokens have
+started reaching the client, restarting generation from scratch would mean
+silently replaying text already shown, which is worse than surfacing the
+error. Full resumable mid-stream retry is a real, named gap, not solved
+here.
+
+### 14. No observability — a slow or failing request was invisible
+**Before:** no per-request timing, no way to tell whether a slow chat
+reply was Gemini being slow or the app's own code, no request id to
+reference when debugging a specific failure.
+**Fix:** `observability.py` — structured log line per request (method,
+path, status, total latency, and for chat routes, which topic the guard
+assigned and how long the Gemini call itself took, separate from total
+request time). Every response also carries an `X-Request-Id` header. No
+APM/Prometheus/paid service added — that's a deliberate scope cut for a
+free-tier project, named as the natural next step once grepping logs
+stops being enough.
+
+### 15. The domain guard had never been measured, only unit-tested
+**Before:** `domain_guard.py` had solid unit tests for individual branches
+of its logic, but no measurement of end-to-end classification accuracy —
+"the code does what the code says" is not the same claim as "the
+classifier is right most of the time."
+**Fix:** `eval/eval_dataset.json` (59 hand-labeled examples across
+health/off-topic/emergency/greeting, including adversarial phrasing meant
+to miss the keyword tier and force the LLM fallback) plus
+`eval/run_eval.py`, which reports a confusion matrix, per-class
+precision/recall, and every misclassified example. Explicitly documented
+as a small, honest measurement — enough to catch regressions and give a
+real number to cite, not a claim of clinical-grade validation. Run without
+a Gemini key, it also usefully demonstrates the guard's fail-open behavior
+on ambiguous input (accuracy drops to ~78% because every "unsure" case
+defaults to HEALTH rather than being resolved by the classifier) — with a
+real API key, the LLM fallback tier resolves most of those correctly.
+
+### What's still explicitly not done
+- No OAuth/SSO, no password reset, no email verification.
+- No true resumable mid-stream retry (see #13).
+- No managed metrics/alerting — logs only (see #14).
+- SQLite, not Postgres — the right call for $0 hosting, wrong call the
+  moment this needs multi-instance writes or serious concurrent load. The
+  swap path is documented in `conversation_store.py`'s docstring and only
+  touches that one file's internals, not its public function signatures.

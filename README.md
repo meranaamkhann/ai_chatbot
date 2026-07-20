@@ -6,8 +6,9 @@ polite redirect instead of a generated answer, and anything resembling a
 medical emergency gets a fixed safety message instead of a normal reply.
 
 Built to run for **$0**: a free Gemini API key, a free PaaS tier (Render
-config included), and zero paid or third-party runtime dependencies (no
-CDN scripts, no external fonts, no database, no analytics).
+config included), and only one small, free, open-source added dependency (`tenacity`, for
+retry logic) — no CDN scripts, no external fonts, no paid database, no
+analytics.
 
 See **[AUDIT.md](./AUDIT.md)** for a full, itemized account of what was
 wrong with the previous version of this project and exactly what changed
@@ -20,20 +21,29 @@ changelog.
 
 ```
 app.py                  Flask app: routes, request handling, SSE streaming
-conversation_store.py   Thread-safe, multi-conversation, in-memory chat store
+auth.py                 Signup/login/logout, password hashing, login_required
+db.py                   SQLite connection + schema (users, conversations, messages)
+conversation_store.py   SQLite-backed conversation data access, keyed by user
+gemini_client.py        Retry/backoff wrapper around Gemini calls
+observability.py        Structured per-request logging (latency, topic, request id)
 domain_guard.py         Two-stage topic classifier (keyword pass + LLM fallback)
 security.py             CSRF double-submit tokens + security headers
 branding.py             White-label config (name/tagline/colors/copy via env vars)
+eval/
+  eval_dataset.json      59 labeled examples for measuring guard accuracy
+  run_eval.py             Confusion matrix + precision/recall report
 templates/
   landing.html           Marketing page at /
-  chat.html              Chat app shell at /app
+  auth.html               Shared login/signup page
+  chat.html                Chat app shell at /app
 static/
-  theme.css              Shared design tokens
+  theme.css               Shared design tokens
   landing.css / landing.js
-  chat.css / chat.js      Streaming, sidebar, composer UX
-  markdown.js             Dependency-free markdown renderer for bot replies
-tests/                   pytest suite (52 tests) covering guard logic, API
-                         behavior, CSRF enforcement, and the store's concurrency
+  auth.css
+  chat.css / chat.js       Streaming, sidebar, composer UX
+  markdown.js              Dependency-free markdown renderer for bot replies
+tests/                   pytest suite (58 tests): guard logic, auth flow, per-user
+                         data isolation, CSRF, streaming, retry logic, DB persistence
 ```
 
 ## Routes
@@ -41,18 +51,22 @@ tests/                   pytest suite (52 tests) covering guard logic, API
 | Method | Path | What it does |
 |---|---|---|
 | GET | `/` | Landing page |
-| GET | `/app` | Chat application |
-| GET | `/health` | Liveness probe (used by Render's health check) |
-| GET | `/api/conversations` | List this session's conversations |
+| GET/POST | `/signup` | Create an account |
+| GET/POST | `/login` | Log in |
+| POST | `/logout` | Log out |
+| GET | `/app` | Chat application (login required) |
+| GET | `/health` | Liveness probe |
+| GET | `/api/conversations` | List this user's conversations |
 | POST | `/api/conversations` | Start a new conversation |
 | GET | `/api/conversations/<id>` | Fetch one conversation's history |
 | DELETE | `/api/conversations/<id>` | Delete one conversation |
-| POST | `/api/session/reset` | Clear every conversation in this session |
+| POST | `/api/session/reset` | Delete every conversation for this user |
 | POST | `/api/chat` | Non-streaming reply (also the automatic fallback) |
 | POST | `/api/chat/stream` | Server-Sent-Events streaming reply — what the UI uses |
 
-All `POST`/`DELETE` requests under `/api/` require an `X-CSRF-Token` header
-matching the token embedded in `/app` (see `security.py`).
+All `/api/` routes require being logged in; all `POST`/`DELETE` requests
+under `/api/` additionally require an `X-CSRF-Token` header matching the
+token embedded in `/app` (see `security.py`).
 
 ## Running locally
 
@@ -67,7 +81,19 @@ cp .env.example .env
 
 python app.py
 # → http://127.0.0.1:5000
+# a sibbu.db SQLite file is created automatically on first run
 ```
+
+## Measuring the domain guard
+
+```bash
+python eval/run_eval.py
+```
+
+Reports a confusion matrix and per-class precision/recall against
+`eval/eval_dataset.json`. Works without a Gemini key (keyword tier only,
+ambiguous cases fail open to HEALTH) but is far more meaningful with one,
+since that's what exercises the LLM fallback tier.
 
 ## Running the tests
 
@@ -76,8 +102,8 @@ pip install pytest
 pytest -q
 ```
 
-52 tests, no network calls (the Gemini client is mocked), runs in about a
-second.
+58 tests, no network calls (the Gemini client is mocked), each test run
+gets its own throwaway SQLite database.
 
 ## Deploying for free
 

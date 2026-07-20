@@ -26,7 +26,11 @@
       <a href="#faq">FAQ</a>
       <a href="{{ repo_url }}" class="nav-repo" target="_blank" rel="noopener">Source</a>
     </nav>
+    {% if is_logged_in %}
     <a class="nav-cta" href="/app">Open {{ brand_name }}</a>
+    {% else %}
+    <a class="nav-cta" href="/login">Log in</a>
+    {% endif %}
   </header>
 
   <main>
@@ -40,7 +44,11 @@
           the difference between a health question and a health emergency.
         </p>
         <div class="hero-actions">
-          <a class="btn btn-primary" href="/app">Start a conversation — it's free</a>
+          {% if is_logged_in %}
+          <a class="btn btn-primary" href="/app">Continue to your chats</a>
+          {% else %}
+          <a class="btn btn-primary" href="/signup">Create a free account</a>
+          {% endif %}
           <a class="btn btn-ghost" href="#how-it-works">See how it stays in its lane</a>
         </div>
         <ul class="hero-trust">
