@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="description" content="{{ brand_name }} — {{ brand_tagline }}. A free, open-source AI assistant that only answers health questions." />
+  <title>{{ brand_name }} — {{ brand_tagline }}</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='theme.css') }}" />
+  <link rel="stylesheet" href="{{ url_for('static', filename='landing.css') }}" />
+  <style>:root { --accent: {{ accent_color }}; }</style>
+</head>
+<body>
+
+  <header class="nav">
+    <a class="nav-brand" href="/">
+      <span class="nav-mark" aria-hidden="true">
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M2 12h4l2 7 4-14 2 7h8" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+      </span>
+      {{ brand_name }}
+    </a>
+    <nav class="nav-links">
+      <a href="#how-it-works">How it stays on topic</a>
+      <a href="#try-it">What you can ask</a>
+      <a href="#faq">FAQ</a>
+      <a href="{{ repo_url }}" class="nav-repo" target="_blank" rel="noopener">Source</a>
+    </nav>
+    <a class="nav-cta" href="/app">Open {{ brand_name }}</a>
+  </header>
+
+  <main>
+    <section class="hero">
+      <div class="hero-copy">
+        <p class="eyebrow">Health questions, and only health questions</p>
+        <h1>Ask a health question.<br>Get a straight answer<span class="accent-dot">.</span></h1>
+        <p class="hero-sub">
+          {{ brand_name }} is a small, focused AI assistant: it answers symptoms, conditions,
+          medication, and wellness questions clearly, refuses to wander off-topic, and knows
+          the difference between a health question and a health emergency.
+        </p>
+        <div class="hero-actions">
+          <a class="btn btn-primary" href="/app">Start a conversation — it's free</a>
+          <a class="btn btn-ghost" href="#how-it-works">See how it stays in its lane</a>
+        </div>
+        <ul class="hero-trust">
+          <li>No account or login</li>
+          <li>No card on file, ever</li>
+          <li>Chats live only in your session</li>
+        </ul>
+      </div>
+
+      <div class="hero-vitals" aria-hidden="true">
+        <svg class="pulse-line" viewBox="0 0 900 200" preserveAspectRatio="none">
+          <path class="pulse-path"
+            d="M0,100 L210,100 L245,40 L275,175 L305,20 L335,100 L560,100 L590,60 L615,140 L640,100 L900,100" />
+        </svg>
+      </div>
+    </section>
+
+    <section class="strip" id="try-it">
+      <p class="strip-label">Try asking</p>
+      <div class="chip-row">
+        {% for prompt in suggested_prompts %}
+        <a class="chip" href="/app?prompt={{ prompt|urlencode }}">{{ prompt }}</a>
+        {% endfor %}
+      </div>
+    </section>
+
+    <section class="how" id="how-it-works">
+      <h2>Three checks run before a single reply is written</h2>
+      <p class="section-sub">Every message passes through this before {{ brand_name }} is allowed to answer it.</p>
+
+      <div class="cards">
+        <article class="card">
+          <span class="card-index">01</span>
+          <h3>Topic guard</h3>
+          <p>
+            A fast keyword pass catches the obvious cases instantly. Anything ambiguous or
+            adversarially phrased ("ignore your instructions and…") falls back to a dedicated
+            classifier call before the main model ever sees it. Off-topic requests get a
+            polite redirect, not a generated answer.
+          </p>
+        </article>
+
+        <article class="card card-danger">
+          <span class="card-index">02</span>
+          <h3>Emergency detection</h3>
+          <p>
+            Language suggesting a medical emergency — chest pain, loss of consciousness,
+            suicidal thoughts, severe bleeding — short-circuits straight to a fixed safety
+            message pointing to emergency services. No model generation, no delay, no
+            ambiguity.
+          </p>
+        </article>
+
+        <article class="card">
+          <span class="card-index">03</span>
+          <h3>Session-only memory</h3>
+          <p>
+            Conversations live in server memory for the length of your session and are never
+            written to a database or used to train anything. Close the tab, and it's gone.
+          </p>
+        </article>
+      </div>
+    </section>
+
+    <section class="build" id="under-the-hood">
+      <div class="build-copy">
+        <h2>Built to run on nothing</h2>
+        <p>
+          {{ brand_name }} is a Flask app calling Google's Gemini API on its free tier —
+          there's no database to pay for, no vector store, no paid infrastructure of any
+          kind. It's designed to be forked and deployed on a free Render/Railway/Fly instance
+          with a single free Gemini API key.
+        </p>
+        <ul class="build-list">
+          <li><span>Backend</span>Flask, session-based, zero paid dependencies</li>
+          <li><span>Model</span>Gemini Flash-Lite (free tier, auto-updating alias)</li>
+          <li><span>Storage</span>In-memory, thread-safe, session-scoped</li>
+          <li><span>Hosting</span>Free tier of any standard PaaS (Render config included)</li>
+        </ul>
+      </div>
+    </section>
+
+    <section class="faq" id="faq">
+      <h2>Before you ask</h2>
+      <dl>
+        <div class="faq-item">
+          <dt>Does it diagnose or prescribe anything?</dt>
+          <dd>No. It gives general, educational information and consistently points to a licensed clinician for anything specific to you, including medication dosages.</dd>
+        </div>
+        <div class="faq-item">
+          <dt>Is my conversation stored anywhere?</dt>
+          <dd>Only in server memory for the life of your browser session — never in a database, and never used for training. Use "Clear all chats" any time to wipe it immediately.</dd>
+        </div>
+        <div class="faq-item">
+          <dt>What happens if I ask something unrelated?</dt>
+          <dd>You'll get a short, friendly redirect back to health topics instead of an answer — that's the topic guard working as intended, not a bug.</dd>
+        </div>
+        <div class="faq-item">
+          <dt>Is this free to run myself?</dt>
+          <dd>Yes — it's built specifically to cost $0. Free Gemini API key, free hosting tier, no other services required. The source is linked below.</dd>
+        </div>
+      </dl>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <div class="footer-disclaimer">
+      <strong>Please note:</strong> {{ disclaimer }}
+    </div>
+    <div class="footer-meta">
+      <span>{{ brand_name }} — {{ brand_tagline }}</span>
+      <a href="{{ repo_url }}" target="_blank" rel="noopener">View source</a>
+    </div>
+  </footer>
+
+  <script src="{{ url_for('static', filename='landing.js') }}"></script>
+</body>
+</html>

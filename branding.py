@@ -55,3 +55,19 @@ EMERGENCY_MESSAGE = os.getenv(
     "local emergency number or go to the nearest emergency room right away. "
     "I'm not able to provide emergency care.",
 )
+
+# Starter prompts shown as tappable chips on the landing page and in the
+# empty chat state — they double as a live example of what's in scope,
+# which does more for a first-time user than a paragraph of copy.
+SUGGESTED_PROMPTS = [
+    "What can cause a headache that won't go away?",
+    "Is it safe to take ibuprofen and paracetamol together?",
+    "What's a healthy resting heart rate for an adult?",
+    "How much water should I actually drink a day?",
+    "What are early signs of dehydration?",
+    "How can I improve my sleep quality naturally?",
+]
+
+# Link shown in the landing page footer / "view source" nav item. Override
+# via env var if you fork this for your own deployment.
+REPO_URL = os.getenv("REPO_URL", "https://github.com/meranaamkhann/ai_chatbot")

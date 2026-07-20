@@ -4,7 +4,7 @@ services:
     runtime: python
     plan: free
     buildCommand: pip install -r requirements.txt
-    startCommand: gunicorn app:app
+    startCommand: gunicorn --worker-class gthread --workers 1 --threads 8 --timeout 120 app:app
     healthCheckPath: /health
     envVars:
       - key: PYTHON_VERSION
@@ -14,6 +14,6 @@ services:
       - key: FLASK_SECRET_KEY
         generateValue: true
       - key: GEMINI_MODEL
-        value: gemini-3.5-flash
+        value: gemini-flash-lite-latest
       - key: SESSION_COOKIE_SECURE
         value: "true"
