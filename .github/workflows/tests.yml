@@ -1,0 +1,41 @@
+name: Tests
+
+# Runs the full pytest suite on every push and pull request. Free: GitHub
+# Actions gives every repo a generous free minutes allowance, and this
+# suite runs in a few seconds, so this costs nothing to keep on
+# indefinitely. This is the difference between "tests exist" and "tests
+# are actually enforced" — before this workflow, nothing stopped a red
+# test suite from reaching main.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+          pip install pytest
+
+      - name: Run tests
+        env:
+          # Dummy values — the test suite mocks the Gemini client and never
+          # makes a real network call, so these just need to be present,
+          # not valid. Never put a real API key in a workflow file.
+          GEMINI_API_KEY: test-key-for-ci
+          FLASK_SECRET_KEY: test-secret-for-ci-not-for-real-use
+          ENCRYPTION_KEY: tkGtljKdQPNaeYmt3KQr--k-_13LdA-qc0tUjoeDpLY=
+        run: pytest -q

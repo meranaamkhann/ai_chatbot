@@ -23,6 +23,7 @@ changelog.
 app.py                  Flask app: routes, request handling, SSE streaming
 auth.py                 Signup/login/logout, password hashing, login_required
 db.py                   SQLite connection + schema (users, conversations, messages)
+crypto.py               Fernet encryption for message content/titles at rest
 conversation_store.py   SQLite-backed conversation data access, keyed by user
 gemini_client.py        Retry/backoff wrapper around Gemini calls
 observability.py        Structured per-request logging (latency, topic, request id)
@@ -102,8 +103,9 @@ pip install pytest
 pytest -q
 ```
 
-58 tests, no network calls (the Gemini client is mocked), each test run
-gets its own throwaway SQLite database.
+63 tests, no network calls (the Gemini client is mocked), each test run
+gets its own throwaway SQLite database. Runs automatically on every push
+via GitHub Actions (`.github/workflows/tests.yml`).
 
 ## Deploying for free
 

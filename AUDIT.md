@@ -263,3 +263,42 @@ real API key, the LLM fallback tier resolves most of those correctly.
   moment this needs multi-instance writes or serious concurrent load. The
   swap path is documented in `conversation_store.py`'s docstring and only
   touches that one file's internals, not its public function signatures.
+
+---
+
+## Round 3: encryption at rest and CI
+
+Two items, picked deliberately as the highest-signal fixes from the flaw
+list above — the one that matters most for an app branded around health
+conversations, and the one that stops "tests exist" from being a
+different claim than "tests are enforced."
+
+### 16. Message content and titles were stored in plaintext
+**Before:** `sibbu.db` was a normal SQLite file — anyone with filesystem
+or backup access could open it and read every conversation verbatim. For
+an app whose entire premise is health questions, that's the single
+biggest gap on the whole list.
+**Fix:** `crypto.py` — Fernet symmetric encryption (from `cryptography`,
+now an explicit pinned dependency rather than an undeclared transitive
+one) applied to `messages.content` and `conversations.title` before every
+write, decrypted on every read. Verified with a smoke test that reads the
+raw SQLite file directly and confirms the stored bytes are genuine
+ciphertext, not just base64-obscured text. `ENCRYPTION_KEY` is a new
+required env var, generated the same way as `FLASK_SECRET_KEY`.
+**What this doesn't cover, stated plainly:** email addresses are not
+encrypted (they need to stay queryable for login — hashing the password
+already protects the credential itself). There's no key rotation
+tooling — rotating the key today means writing a one-off script to
+decrypt everything with the old key and re-encrypt with the new one
+before swapping the env var. And upgrading an existing deployment means
+old plaintext rows predate encryption entirely; there's no
+migrate-in-place path, only "new data going forward is encrypted."
+
+### 17. No CI — a red test suite could reach main and nothing would stop it
+**Before:** 58 tests existed and passed locally, but nothing ran them
+automatically. Pushing broken code straight to `main` was always possible
+and nothing would flag it before Render tried to deploy it.
+**Fix:** `.github/workflows/tests.yml` — runs the full suite on every push
+and pull request via GitHub Actions, which is free for a repo at this
+usage level. Uses dummy (not real) API keys since every test already
+mocks the Gemini client and makes zero real network calls.

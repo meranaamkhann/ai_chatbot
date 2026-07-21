@@ -9,8 +9,9 @@ import pytest
 def ctx(monkeypatch):
     tmp_dir = tempfile.mkdtemp()
     monkeypatch.setenv("DATABASE_PATH", str(Path(tmp_dir) / "test.db"))
+    monkeypatch.setenv("ENCRYPTION_KEY", "tkGtljKdQPNaeYmt3KQr--k-_13LdA-qc0tUjoeDpLY=")
 
-    for mod in ("db", "conversation_store"):
+    for mod in ("db", "conversation_store", "crypto"):
         sys.modules.pop(mod, None)
 
     import db
@@ -31,7 +32,7 @@ def ctx(monkeypatch):
         conn.commit()
         yield store
 
-    for mod in ("db", "conversation_store"):
+    for mod in ("db", "conversation_store", "crypto"):
         sys.modules.pop(mod, None)
 
 

@@ -1,5 +1,6 @@
 """
-Conversation store for Sibbu — SQLite-backed, keyed by user account.
+Conversation store for Sibbu — SQLite-backed, keyed by user account,
+with message content and titles encrypted at rest.
 
 This replaces the earlier in-memory, session-keyed store. Two things
 changed the requirements enough to warrant that:
@@ -11,6 +12,11 @@ changed the requirements enough to warrant that:
    deploys, idle spin-down, etc.) used to silently wipe every
    conversation. That's a real data-loss bug for anything calling itself
    more than a demo.
+
+Encryption: `messages.content` and `conversations.title` are stored as
+Fernet ciphertext (see crypto.py) and decrypted on read. Everything else
+(role, timestamps, ids) stays plain — it's metadata, not health content,
+and encrypting it would only make debugging harder for no privacy gain.
 
 Still zero added infrastructure cost: SQLite is a file on disk, not a
 service you pay for or configure. See db.py for the schema and connection
@@ -24,6 +30,7 @@ from __future__ import annotations
 
 import uuid
 
+from crypto import decrypt_text, encrypt_text
 from db import get_db
 
 MAX_CONVERSATIONS_PER_USER = 50
@@ -37,7 +44,7 @@ def new_conversation(user_id: str) -> dict:
     conv_id = str(uuid.uuid4())
     db.execute(
         "INSERT INTO conversations (id, user_id, title) VALUES (?, ?, ?)",
-        (conv_id, user_id, DEFAULT_TITLE),
+        (conv_id, user_id, encrypt_text(DEFAULT_TITLE)),
     )
     _evict_oldest_if_over_cap(db, user_id)
     db.commit()
@@ -62,7 +69,7 @@ def list_conversations(user_id: str) -> list[dict]:
         "SELECT id, title, updated_at FROM conversations WHERE user_id = ? ORDER BY updated_at DESC, rowid DESC",
         (user_id,),
     ).fetchall()
-    return [dict(row) for row in rows]
+    return [{"id": row["id"], "title": decrypt_text(row["title"]), "updated_at": row["updated_at"]} for row in rows]
 
 
 def owns_conversation(user_id: str, conv_id: str) -> bool:
@@ -80,7 +87,7 @@ def get_history(conv_id: str, limit: int = MAX_HISTORY_MESSAGES) -> list[dict]:
         (conv_id,),
     ).fetchall()
     trimmed = rows[-limit:] if limit else rows
-    return [dict(row) for row in trimmed]
+    return [{"role": row["role"], "content": decrypt_text(row["content"])} for row in trimmed]
 
 
 def delete_conversation(user_id: str, conv_id: str) -> None:
@@ -108,14 +115,14 @@ def record_turn(conv_id: str, role: str, content: str) -> None:
     db = get_db()
     db.execute(
         "INSERT INTO messages (conversation_id, role, content) VALUES (?, ?, ?)",
-        (conv_id, role, content),
+        (conv_id, role, encrypt_text(content)),
     )
 
     if role == "user":
         row = db.execute("SELECT title FROM conversations WHERE id = ?", (conv_id,)).fetchone()
-        if row and row["title"] == DEFAULT_TITLE:
+        if row and decrypt_text(row["title"]) == DEFAULT_TITLE:
             title = (content[:TITLE_MAX_LEN] + "…") if len(content) > TITLE_MAX_LEN else content
-            db.execute("UPDATE conversations SET title = ? WHERE id = ?", (title, conv_id))
+            db.execute("UPDATE conversations SET title = ? WHERE id = ?", (encrypt_text(title), conv_id))
 
     db.execute("UPDATE conversations SET updated_at = datetime('now') WHERE id = ?", (conv_id,))
     db.commit()

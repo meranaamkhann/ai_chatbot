@@ -5,3 +5,4 @@ google-genai==2.8.0
 python-dotenv==1.2.2
 gunicorn==26.0.0
 tenacity==9.1.2
+cryptography==49.0.0

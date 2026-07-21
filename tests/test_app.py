@@ -15,13 +15,14 @@ def app_module(monkeypatch):
     and the Gemini client mocked out."""
     monkeypatch.setenv("GEMINI_API_KEY", "test-key")
     monkeypatch.setenv("FLASK_SECRET_KEY", "test-secret")
+    monkeypatch.setenv("ENCRYPTION_KEY", "tkGtljKdQPNaeYmt3KQr--k-_13LdA-qc0tUjoeDpLY=")
     monkeypatch.setenv("GEMINI_MODEL", "gemini-flash-lite-latest")
 
     tmp_dir = tempfile.mkdtemp()
     db_path = Path(tmp_dir) / "test.db"
     monkeypatch.setenv("DATABASE_PATH", str(db_path))
 
-    for mod in ("app", "db", "conversation_store", "auth"):
+    for mod in ("app", "db", "conversation_store", "auth", "crypto"):
         sys.modules.pop(mod, None)
 
     with patch("google.genai.Client") as mock_client_cls:
@@ -43,7 +44,7 @@ def app_module(monkeypatch):
         app_module.client = mock_client
         yield app_module
 
-    for mod in ("app", "db", "conversation_store", "auth"):
+    for mod in ("app", "db", "conversation_store", "auth", "crypto"):
         sys.modules.pop(mod, None)
 
 
