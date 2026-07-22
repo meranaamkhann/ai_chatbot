@@ -184,6 +184,42 @@ def test_logout_ends_session(client):
     assert response.status_code == 302
 
 
+def test_stale_session_after_db_reset_redirects_instead_of_crashing(client, app_module):
+    """Regression test for a real production bug: Render's free tier wipes
+    its ephemeral disk on redeploy, but a visitor's browser session cookie
+    survives — so the session's user_id can point at a row that no longer
+    exists. This used to crash /app with an unhandled 500
+    (`fetchone()["email"]` on a None row). It should now self-heal by
+    logging the stale session out and redirecting to /login."""
+    signup(client, email="stale@example.com")
+
+    # Simulate the user row disappearing out from under an active session
+    # (a DB wipe/redeploy, not a normal logout).
+    with app_module.app.app_context():
+        db = app_module.get_db()
+        db.execute("DELETE FROM users WHERE email = ?", ("stale@example.com",))
+        db.commit()
+
+    response = client.get("/app", follow_redirects=False)
+    assert response.status_code == 302
+    assert "/login" in response.headers["Location"]
+
+    # The stale session should also have been cleared, not just redirected once.
+    second_response = client.get("/app", follow_redirects=False)
+    assert second_response.status_code == 302
+
+
+def test_stale_session_on_api_route_returns_401_not_500(client, app_module):
+    token = signup_and_get_csrf(client, email="staleapi@example.com")
+    with app_module.app.app_context():
+        db = app_module.get_db()
+        db.execute("DELETE FROM users WHERE email = ?", ("staleapi@example.com",))
+        db.commit()
+
+    response = client.get("/api/conversations")
+    assert response.status_code == 401
+
+
 def test_health_reports_database_ok(client):
     response = client.get("/health")
     assert response.status_code == 200

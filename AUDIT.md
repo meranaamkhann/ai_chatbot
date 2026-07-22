@@ -463,3 +463,99 @@ framing ("I'm a doctor, so..."), and roleplay-based bypass attempts.
   limit past a few hundred conversations per user.
 - Retention purge is opportunistic (on page load), not a true background
   job — named explicitly in #22, not hidden.
+
+---
+
+## Round 5: production crash fix, CI fix, frontend/content overhaul
+
+Three real, reported problems — not polish requests — plus a requested
+content/visual pass. Each bug below was reproduced and verified fixed,
+not just patched blind.
+
+### 27. Production crash: stale session after a DB reset
+**The bug, exactly as reported:** the live Render deployment returned a
+raw `{"error": "Internal server error"}` on `/app`, and the same crash
+reproduced locally. Root cause: `chat_app()` ran
+`db.execute("SELECT email FROM users WHERE id = ?", (user_id,)).fetchone()["email"]`
+assuming the session's `user_id` always has a matching row — but Render's
+free tier wipes its ephemeral disk on every redeploy, while a visitor's
+browser session cookie survives untouched. The moment the DB is fresh but
+the cookie is old, that lookup returns `None`, and subscripting `None`
+crashes with an unhandled 500.
+**Fix:** `auth.py`'s `login_required`/`api_login_required` now verify the
+session's user actually still exists in the database on every request
+(`_session_user_still_exists`); if not, the stale session is cleared and
+the visitor is sent to `/login` (or gets a clean 401 on API routes)
+instead of a crash. Verified two ways: a reproduction script that deletes
+the user row out from under a live session and confirms a clean redirect
+instead of a 500, and two new regression tests
+(`test_stale_session_after_db_reset_redirects_instead_of_crashing`,
+`test_stale_session_on_api_route_returns_401_not_500`).
+
+### 28. CI failure: `ModuleNotFoundError` in GitHub Actions only
+**The bug:** `pytest -q` passed locally (`111 passed`) but failed in
+GitHub Actions with `ModuleNotFoundError: No module named 'branding'`
+and similar for every top-level module. Root cause: `python -m pytest`
+(what was actually run locally and in this project's own verification)
+adds the current working directory to `sys.path` automatically; bare
+`pytest` (what the CI workflow's `run: pytest -q` actually invoked) does
+not — pytest's default import mode only adds the nearest directory
+*without* an `__init__.py` walking up from each test file, which is the
+`tests/` folder itself, not the project root.
+**Fix:** added `pytest.ini` with `pythonpath = .`, which makes pytest add
+the project root to `sys.path` regardless of how it's invoked, and
+changed the CI workflow to `python -m pytest -q` as a second, redundant
+safeguard. Verified by running bare `pytest -q` (no `-m`) locally, which
+now passes — reproducing and then closing the exact gap that broke CI.
+
+### 29. Frontend: sidebar and code blocks broke in dark mode
+**The bug:** the sidebar was styled `background: var(--ink)` with
+hardcoded light text colors, intending to always look like a dark navy
+panel. But `--ink` is the *body text color* token, which correctly flips
+to a light color in dark mode — so turning dark mode on would flip the
+sidebar to a light background while its text stayed hardcoded light,
+making the entire sidebar unreadable. The code-block (`<pre>`) styling had
+the identical bug. This is almost certainly what "dark/light theme not
+working properly" was actually describing.
+**Fix:** the sidebar now uses `var(--paper-sunken)`/`var(--ink)` properly,
+so it follows the theme like the rest of the app instead of being
+stuck. Code blocks got their own fixed, theme-independent
+`--code-bg`/`--code-text` tokens (the same convention GitHub/VSCode use —
+code blocks intentionally don't flip with the page theme, but that has
+to be a deliberate, consistently-applied choice, not an accident of reusing
+the wrong variable). The landing page's sticky nav also had a hardcoded
+light `rgba()` backdrop that would look wrong in dark mode — replaced
+with `color-mix(in srgb, var(--paper) 86%, transparent)`, and the
+nav's dark "invert" CTA button had the same `var(--ink)`-as-background
+bug as the sidebar, fixed by using the accent color instead (correct in
+both themes by construction). Every CSS file was grep-audited for
+hardcoded hex/rgba colors afterward to confirm nothing else was missed.
+**Fix, part 2 (icon rendering):** the theme toggle button previously
+replaced its entire `textContent` with an emoji on every theme change —
+fragile, and emoji rendering is inconsistent across platforms/fonts.
+Rewritten to use inline SVG sun/moon icons whose visibility is controlled
+entirely by CSS keyed off `[data-theme]`, so `theme-toggle.js` only ever
+touches the `data-theme` attribute, `aria-pressed`, and a `.toggle-label`
+span's text — it never overwrites a button's markup, which is what made
+the previous version fragile.
+
+### 30. Content: no source-code exposure, no implementation disclosure, health-facility framing throughout
+Per explicit request: every link to the GitHub repository was removed
+(nav and footer), and the entire "Under the hood / Built to run on
+nothing" section — which named Flask, Gemini, SQLite, and Render by
+name — was removed outright rather than reworded, since the request was
+specifically to not expose implementation details, not just to phrase
+them more politely. The "how it stays on topic" section was rewritten
+from engineering language ("keyword pass", "LLM fallback", "session
+memory") to plain patient-facing trust language ("Stays on topic",
+"Recognizes emergencies", "Private by default"). A new "What Sibbu helps
+with" section was added with four health-category cards (symptoms &
+conditions, medication questions, nutrition & fitness, mental wellbeing),
+each with a simple inline SVG icon — no icon-font or CDN dependency,
+consistent with the project's existing zero-external-script constraint.
+
+### What's still explicitly not done
+Same list as Round 4's closing note — password reset was covered in
+Round 4, but CAPTCHA/bot defense on signup, breach-password checking,
+token/cost-per-request logging, and conversation-list pagination remain
+open, unaffected by this round's fixes.

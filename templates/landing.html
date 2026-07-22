@@ -3,8 +3,9 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <meta name="description" content="{{ brand_name }} — {{ brand_tagline }}. A free, open-source AI assistant that only answers health questions." />
+  <meta name="description" content="{{ brand_name }} — {{ brand_tagline }}. A free AI health assistant that answers your questions clearly and knows when to point you to real care." />
   <title>{{ brand_name }} — {{ brand_tagline }}</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 24 24%22><path fill=%22%230d9488%22 d=%22M2 12h4l2 7 4-14 2 7h8%22 stroke=%22%230d9488%22 stroke-width=%223%22 fill=%22none%22 stroke-linecap=%22round%22 stroke-linejoin=%22round%22/></svg>" />
   <script src="{{ url_for('static', filename='theme-toggle.js') }}"></script>
   <link rel="stylesheet" href="{{ url_for('static', filename='theme.css') }}" />
   <link rel="stylesheet" href="{{ url_for('static', filename='landing.css') }}" />
@@ -22,17 +23,20 @@
       {{ brand_name }}
     </a>
     <nav class="nav-links">
-      <a href="#how-it-works">How it stays on topic</a>
+      <a href="#safety">Safety</a>
       <a href="#try-it">What you can ask</a>
       <a href="#faq">FAQ</a>
-      <a href="{{ repo_url }}" class="nav-repo" target="_blank" rel="noopener">Source</a>
     </nav>
     {% if is_logged_in %}
     <a class="nav-cta" href="/app">Open {{ brand_name }}</a>
     {% else %}
     <a class="nav-cta" href="/login">Log in</a>
     {% endif %}
-    <button type="button" data-theme-toggle class="theme-toggle-btn" aria-pressed="false">🌙 Dark</button>
+    <button type="button" data-theme-toggle class="theme-toggle-btn" aria-label="Toggle dark mode" aria-pressed="false">
+      <svg class="icon-moon" viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+      <svg class="icon-sun" viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41" stroke-linecap="round"/></svg>
+      <span class="toggle-label">Dark</span>
+    </button>
   </header>
 
   <main>
@@ -41,9 +45,9 @@
         <p class="eyebrow">Health questions, and only health questions</p>
         <h1>Ask a health question.<br>Get a straight answer<span class="accent-dot">.</span></h1>
         <p class="hero-sub">
-          {{ brand_name }} is a small, focused AI assistant: it answers symptoms, conditions,
-          medication, and wellness questions clearly, refuses to wander off-topic, and knows
-          the difference between a health question and a health emergency.
+          {{ brand_name }} is a focused health assistant: clear answers on symptoms, conditions,
+          medication, nutrition, and mental wellbeing — and it always knows the difference
+          between a question and an emergency.
         </p>
         <div class="hero-actions">
           {% if is_logged_in %}
@@ -51,12 +55,12 @@
           {% else %}
           <a class="btn btn-primary" href="/signup">Create a free account</a>
           {% endif %}
-          <a class="btn btn-ghost" href="#how-it-works">See how it stays in its lane</a>
+          <a class="btn btn-ghost" href="#safety">See how it keeps you safe</a>
         </div>
         <ul class="hero-trust">
           <li>Free account, no card ever</li>
-          <li>Conversations saved to your account</li>
-          <li>Encrypted at rest</li>
+          <li>Your conversations, saved securely</li>
+          <li>Encrypted, private by default</li>
         </ul>
       </div>
 
@@ -103,60 +107,92 @@
       </div>
     </section>
 
-    <section class="how reveal" id="how-it-works">
-      <h2>Three checks run before a single reply is written</h2>
-      <p class="section-sub">Every message passes through this before {{ brand_name }} is allowed to answer it.</p>
+    <section class="categories reveal" id="categories">
+      <h2>What {{ brand_name }} helps with</h2>
+      <p class="section-sub">A few of the areas covered — ask in your own words, any time.</p>
 
-      <div class="cards">
-        <article class="card">
-          <span class="card-index">01</span>
-          <h3>Topic guard</h3>
-          <p>
-            A fast keyword pass catches the obvious cases instantly. Anything ambiguous or
-            adversarially phrased ("ignore your instructions and…") falls back to a dedicated
-            classifier call before the main model ever sees it. Off-topic requests get a
-            polite redirect, not a generated answer.
-          </p>
+      <div class="category-grid">
+        <article class="category-card">
+          <span class="category-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8">
+              <path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.6l-1-1a5.5 5.5 0 1 0-7.8 7.8l1 1L12 21l7.8-7.6 1-1a5.5 5.5 0 0 0 0-7.8z"/>
+            </svg>
+          </span>
+          <h3>Symptoms &amp; conditions</h3>
+          <p>Understand what a symptom might mean and when it's worth seeing someone.</p>
         </article>
 
-        <article class="card card-danger">
-          <span class="card-index">02</span>
-          <h3>Emergency detection</h3>
-          <p>
-            Language suggesting a medical emergency — chest pain, loss of consciousness,
-            suicidal thoughts, severe bleeding — short-circuits straight to a fixed safety
-            message pointing to emergency services. No model generation, no delay, no
-            ambiguity.
-          </p>
+        <article class="category-card">
+          <span class="category-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8">
+              <rect x="3" y="9" width="18" height="6" rx="3" transform="rotate(-45 12 12)"/>
+              <line x1="12" y1="7.5" x2="12" y2="16.5" transform="rotate(-45 12 12)"/>
+            </svg>
+          </span>
+          <h3>Medication questions</h3>
+          <p>General guidance on common medications, interactions, and safe use.</p>
         </article>
 
-        <article class="card">
-          <span class="card-index">03</span>
-          <h3>Encrypted, account-scoped storage</h3>
-          <p>
-            Conversations are saved to your account so they're there next time you log in —
-            but message content is encrypted at rest, never used for training, and
-            "Clear all chats" deletes it immediately, for good.
-          </p>
+        <article class="category-card">
+          <span class="category-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8">
+              <path d="M12 2c-2 3-6 6-6 11a6 6 0 0 0 12 0c0-5-4-8-6-11z"/>
+            </svg>
+          </span>
+          <h3>Nutrition &amp; fitness</h3>
+          <p>Practical, sustainable guidance on eating, hydration, and staying active.</p>
+        </article>
+
+        <article class="category-card">
+          <span class="category-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8">
+              <path d="M9 18h6M10 22h4M12 2a7 7 0 0 0-4 12.7c.6.5 1 1.2 1 2.3h6c0-1.1.4-1.8 1-2.3A7 7 0 0 0 12 2z"/>
+            </svg>
+          </span>
+          <h3>Mental wellbeing</h3>
+          <p>A judgment-free space to talk through stress, sleep, and mood.</p>
         </article>
       </div>
     </section>
 
-    <section class="build reveal" id="under-the-hood">
-      <div class="build-copy">
-        <h2>Built to run on nothing</h2>
-        <p>
-          {{ brand_name }} is a Flask app calling Google's Gemini API on its free tier —
-          there's no database to pay for, no vector store, no paid infrastructure of any
-          kind. It's designed to be forked and deployed on a free Render/Railway/Fly instance
-          with a single free Gemini API key.
-        </p>
-        <ul class="build-list">
-          <li><span>Backend</span>Flask, session-based, zero paid dependencies</li>
-          <li><span>Model</span>Gemini Flash-Lite (free tier, auto-updating alias)</li>
-          <li><span>Storage</span>SQLite, encrypted at rest, per-account</li>
-          <li><span>Hosting</span>Free tier of any standard PaaS (Render config included)</li>
-        </ul>
+    <section class="how reveal" id="safety">
+      <h2>Built with safety first</h2>
+      <p class="section-sub">Every message is handled with the same care before {{ brand_name }} responds.</p>
+
+      <div class="cards">
+        <article class="card">
+          <span class="card-index" aria-hidden="true">
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4.5 8-11V5l-8-3-8 3v6c0 6.5 8 11 8 11z"/></svg>
+          </span>
+          <h3>Stays on topic</h3>
+          <p>
+            {{ brand_name }} only discusses health and wellbeing. Anything else gets a
+            polite redirect back to what it's actually here to help with — not a
+            made-up answer.
+          </p>
+        </article>
+
+        <article class="card card-danger">
+          <span class="card-index" aria-hidden="true">
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 9v4M12 17h.01M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg>
+          </span>
+          <h3>Recognizes emergencies</h3>
+          <p>
+            Language suggesting a medical emergency is met immediately with clear,
+            direct guidance to seek urgent care — no delay, no hedging.
+          </p>
+        </article>
+
+        <article class="card">
+          <span class="card-index" aria-hidden="true">
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="11" width="16" height="9" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>
+          </span>
+          <h3>Private by default</h3>
+          <p>
+            Your conversations belong to your account and are encrypted. They're
+            never used to train anything, and you can delete them any time.
+          </p>
+        </article>
       </div>
     </section>
 
@@ -168,16 +204,16 @@
           <dd>No. It gives general, educational information and consistently points to a licensed clinician for anything specific to you, including medication dosages.</dd>
         </div>
         <div class="faq-item">
-          <dt>Is my conversation stored anywhere?</dt>
-          <dd>Yes — it's saved to your account, encrypted, so it's there next time you log in. It's never used for training, and "Clear all chats" deletes it immediately and permanently.</dd>
+          <dt>Is my conversation private?</dt>
+          <dd>Yes — it's tied to your account and encrypted. It's never used for training, and you can delete any conversation, or your whole account, at any time from settings.</dd>
         </div>
         <div class="faq-item">
-          <dt>What happens if I ask something unrelated?</dt>
-          <dd>You'll get a short, friendly redirect back to health topics instead of an answer — that's the topic guard working as intended, not a bug.</dd>
+          <dt>What happens if I ask something unrelated to health?</dt>
+          <dd>You'll get a short, friendly redirect back to health topics instead of an answer — that's by design, not a bug.</dd>
         </div>
         <div class="faq-item">
-          <dt>Is this free to run myself?</dt>
-          <dd>Yes — it's built specifically to cost $0. Free Gemini API key, free hosting tier, no other services required. The source is linked below.</dd>
+          <dt>Is this free to use?</dt>
+          <dd>Yes — creating an account and using {{ brand_name }} costs nothing.</dd>
         </div>
       </dl>
     </section>
@@ -189,7 +225,6 @@
     </div>
     <div class="footer-meta">
       <span>{{ brand_name }} — {{ brand_tagline }}</span>
-      <a href="{{ repo_url }}" target="_blank" rel="noopener">View source</a>
     </div>
   </footer>
 

@@ -42,7 +42,11 @@
 
       <div class="sidebar-footer">
         <p class="sidebar-user" title="{{ user_email }}">{{ user_email }}</p>
-        <button type="button" data-theme-toggle class="text-btn theme-toggle-btn-inline" aria-pressed="false">🌙 Dark mode</button>
+        <button type="button" data-theme-toggle class="text-btn theme-toggle-btn-inline" aria-label="Toggle dark mode" aria-pressed="false">
+          <svg class="icon-moon" viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+          <svg class="icon-sun" viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41" stroke-linecap="round"/></svg>
+          <span class="toggle-label">Dark</span> mode
+        </button>
         <button id="clear-all-btn" type="button" class="text-btn">Clear all chats</button>
         <a href="/settings" class="text-btn">Settings</a>
         <a href="/" class="text-btn">← Back home</a>

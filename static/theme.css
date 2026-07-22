@@ -44,6 +44,14 @@
   --font-display: Georgia, "Iowan Old Style", "Palatino Linotype", "Times New Roman", serif;
   --font-body: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
   --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+
+  /* Code blocks stay a fixed dark surface regardless of light/dark page
+     theme (the same convention GitHub/VSCode use) — kept as its own
+     tokens rather than reusing --ink, which flips to a light color in
+     dark mode and would otherwise invert the code block to unreadable
+     light-on-light. */
+  --code-bg: #0f172a;
+  --code-text: #e2e8f0;
 }
 
 /* Dark theme: same tokens, same structure, different values — every
@@ -152,6 +160,9 @@ button {
 }
 
 .theme-toggle-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   border: 1px solid var(--line);
   background: var(--paper-raised);
   color: var(--ink-soft);
@@ -166,4 +177,32 @@ button {
 .theme-toggle-btn:hover {
   border-color: var(--pulse);
   color: var(--pulse-dark);
+}
+
+.theme-toggle-btn svg {
+  flex-shrink: 0;
+}
+
+/* Icon swap: pure CSS, keyed off the [data-theme] attribute set by
+   theme-toggle.js. Light mode (default/no attribute) shows the moon
+   (offering to switch to dark); dark mode shows the sun (offering to
+   switch back to light). This never depends on JS replacing markup, so
+   it can't silently break the way textContent-based swapping did.
+   Scoped to [data-theme-toggle] (an attribute, not a class) so it
+   applies consistently no matter which button styling class wraps it
+   (e.g. the sidebar's dark-themed toggle uses different classes). */
+[data-theme-toggle] .icon-sun {
+  display: none;
+}
+
+[data-theme-toggle] .icon-moon {
+  display: inline-flex;
+}
+
+:root[data-theme="dark"] [data-theme-toggle] .icon-sun {
+  display: inline-flex;
+}
+
+:root[data-theme="dark"] [data-theme-toggle] .icon-moon {
+  display: none;
 }

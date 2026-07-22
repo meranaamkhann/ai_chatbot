@@ -5,12 +5,17 @@
 }
 
 /* ---------- Sidebar ---------- */
+/* Uses paper-sunken/ink tokens rather than a hardcoded dark panel, so it
+   correctly follows the light/dark toggle instead of staying visually
+   "stuck" — a fixed-dark sidebar would invert to unreadable light-on-light
+   the moment dark mode flips --ink to a light color for body text. */
 
 .sidebar {
   width: 280px;
   flex-shrink: 0;
-  background: var(--ink);
-  color: #f1f5f9;
+  background: var(--paper-sunken);
+  border-right: 1px solid var(--line);
+  color: var(--ink);
   display: flex;
   flex-direction: column;
   padding: 22px 18px;
@@ -42,13 +47,13 @@
   margin: 0;
   font-size: 15px;
   font-weight: 600;
-  color: #ffffff;
+  color: var(--ink);
 }
 
 .brand-tagline {
   margin: 2px 0 0;
   font-size: 12px;
-  color: #94a3b8;
+  color: var(--muted);
 }
 
 .new-chat-btn {
@@ -58,9 +63,9 @@
   gap: 8px;
   width: 100%;
   padding: 10px 14px;
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  background: #1e293b;
-  color: #f1f5f9;
+  border: 1px solid var(--line);
+  background: var(--paper-raised);
+  color: var(--ink);
   border-radius: var(--radius-md);
   font-size: 14px;
   font-weight: 500;
@@ -69,7 +74,7 @@
 }
 
 .new-chat-btn:hover {
-  background: rgba(255, 255, 255, 0.08);
+  border-color: var(--pulse);
 }
 
 .topics-label {
@@ -78,7 +83,7 @@
   font-weight: 600;
   letter-spacing: 0.06em;
   text-transform: uppercase;
-  color: #94a3b8;
+  color: var(--muted);
 }
 
 .history-panel {
@@ -105,16 +110,17 @@
   padding: 9px 10px;
   border-radius: var(--radius-sm);
   cursor: pointer;
-  color: #cbd5e1;
+  color: var(--ink-soft);
 }
 
 .conversation-item:hover {
-  background: rgba(255, 255, 255, 0.06);
+  background: var(--paper-raised);
 }
 
 .conversation-item.active {
-  background: rgba(255, 255, 255, 0.1);
-  color: #fff;
+  background: var(--paper-raised);
+  color: var(--ink);
+  box-shadow: inset 2px 0 0 var(--accent, var(--pulse));
 }
 
 .conversation-title {
@@ -130,13 +136,13 @@
   flex-direction: column;
   gap: 4px;
   padding-top: 10px;
-  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  border-top: 1px solid var(--line);
 }
 
 .sidebar-user {
   margin: 0 0 2px;
   font-size: 12px;
-  color: #cbd5e1;
+  color: var(--ink-soft);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -153,7 +159,7 @@
 .text-btn {
   background: transparent;
   border: none;
-  color: #94a3b8;
+  color: var(--muted);
   font-size: 12.5px;
   text-align: left;
   padding: 6px 4px;
@@ -162,7 +168,13 @@
 }
 
 .text-btn:hover {
-  color: #f1f5f9;
+  color: var(--ink);
+}
+
+.theme-toggle-btn-inline {
+  display: flex;
+  align-items: center;
+  gap: 6px;
 }
 
 .sidebar-toggle {
@@ -310,8 +322,8 @@
 
 .message.bot .message-bubble pre {
   position: relative;
-  background: var(--ink);
-  color: #e2e8f0;
+  background: var(--code-bg);
+  color: var(--code-text);
   border-radius: var(--radius-sm);
   padding: 14px 16px;
   overflow-x: auto;
@@ -329,7 +341,7 @@
   top: 8px;
   right: 8px;
   background: rgba(255, 255, 255, 0.1);
-  color: #e2e8f0;
+  color: var(--code-text);
   border: none;
   border-radius: 6px;
   font-size: 11px;

@@ -121,12 +121,39 @@ def current_user_id() -> str | None:
     return session.get("user_id")
 
 
+def _session_user_still_exists(user_id: str) -> bool:
+    """True if this user_id actually has a row in the database.
+
+    This matters specifically because of how free-tier hosting behaves:
+    Render's free web service disk is ephemeral, so a redeploy or an
+    idle-spin-down wipes the SQLite file, but a visitor's browser still
+    holds a perfectly valid, unexpired session cookie pointing at a
+    user_id that no longer exists anywhere. Without this check, every
+    route that looks up `SELECT ... WHERE id = ?` and assumes a row
+    exists crashes with an unhandled 500 the moment that happens — which
+    is exactly the bug this closes, verified against the exact crash
+    (`db.execute(...).fetchone()["email"]` on a None row) seen in
+    production and reproduced locally after a DB reset.
+    """
+    row = get_db().execute("SELECT 1 FROM users WHERE id = ?", (user_id,)).fetchone()
+    return row is not None
+
+
 def login_required(view):
-    """Use on page routes — redirects anonymous visitors to /login."""
+    """Use on page routes — redirects anonymous visitors to /login.
+
+    Also self-heals a stale session: if the cookie's user_id has no
+    matching row (deleted account, or the DB was reset/redeployed under
+    it), the session is cleared and the visitor is sent to log in again,
+    rather than the route crashing on a lookup that assumes the user
+    still exists.
+    """
 
     @wraps(view)
     def wrapped(*args, **kwargs):
-        if not current_user_id():
+        user_id = current_user_id()
+        if not user_id or not _session_user_still_exists(user_id):
+            log_out_user()
             next_target = request.full_path if request.query_string else request.path
             if not is_safe_redirect_target(next_target):
                 next_target = None
@@ -137,11 +164,18 @@ def login_required(view):
 
 
 def api_login_required(view):
-    """Use on JSON API routes — returns 401 instead of redirecting."""
+    """Use on JSON API routes — returns 401 instead of redirecting.
+
+    Same self-healing as login_required: a stale session pointing at a
+    since-deleted or since-wiped user is treated as logged out, not as a
+    crash.
+    """
 
     @wraps(view)
     def wrapped(*args, **kwargs):
-        if not current_user_id():
+        user_id = current_user_id()
+        if not user_id or not _session_user_still_exists(user_id):
+            log_out_user()
             return jsonify({"error": "Please log in to continue."}), 401
         return view(*args, **kwargs)
 

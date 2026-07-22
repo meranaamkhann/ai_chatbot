@@ -38,4 +38,4 @@ jobs:
           GEMINI_API_KEY: test-key-for-ci
           FLASK_SECRET_KEY: test-secret-for-ci-not-for-real-use
           ENCRYPTION_KEY: tkGtljKdQPNaeYmt3KQr--k-_13LdA-qc0tUjoeDpLY=
-        run: pytest -q
+        run: python -m pytest -q

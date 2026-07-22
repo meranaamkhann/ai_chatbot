@@ -1,9 +1,16 @@
-// Theme toggle, shared across landing/auth/chat pages.
+// Theme toggle, shared across landing/auth/chat/settings pages.
 //
 // Applied as early as possible (this script is loaded in <head>, not at
 // the end of <body>) specifically to avoid a "flash of wrong theme" —
 // if this ran after the page painted, a dark-mode user would see a
 // bright white flash on every load before JS caught up.
+//
+// Icon swap (sun/moon) is handled entirely by CSS keyed off the
+// [data-theme] attribute on <html> — see theme.css. This script only
+// ever sets that attribute, aria-pressed, and the text of the button's
+// `.toggle-label` span. It deliberately never touches a button's
+// innerHTML/textContent wholesale, because doing that on every theme
+// change is what previously wiped out the button's icon markup.
 
 (function () {
   const STORAGE_KEY = "sibbu-theme";
@@ -20,12 +27,20 @@
     return window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches;
   }
 
+  function syncButtons(theme) {
+    document.querySelectorAll("[data-theme-toggle]").forEach((btn) => {
+      const isDark = theme === "dark";
+      btn.setAttribute("aria-pressed", String(isDark));
+      const label = btn.querySelector(".toggle-label");
+      if (label) {
+        label.textContent = isDark ? "Light" : "Dark";
+      }
+    });
+  }
+
   function applyTheme(theme) {
     document.documentElement.setAttribute("data-theme", theme);
-    document.querySelectorAll("[data-theme-toggle]").forEach((btn) => {
-      btn.setAttribute("aria-pressed", String(theme === "dark"));
-      btn.textContent = theme === "dark" ? "☀️ Light" : "🌙 Dark";
-    });
+    syncButtons(theme);
   }
 
   function setTheme(theme) {
@@ -37,11 +52,12 @@
     applyTheme(theme);
   }
 
-  // Run immediately (before DOMContentLoaded) so there's no flash.
+  // Run immediately (before DOMContentLoaded) so there's no flash. Buttons
+  // may not exist in the DOM yet at this point — that's fine, syncButtons
+  // is called again below once they do.
   const initial = getStoredTheme() || (systemPrefersDark() ? "dark" : "light");
-  applyTheme(initial);
+  document.documentElement.setAttribute("data-theme", initial);
 
-  // Wire up any toggle buttons once the DOM is ready.
   document.addEventListener("DOMContentLoaded", () => {
     document.querySelectorAll("[data-theme-toggle]").forEach((btn) => {
       btn.addEventListener("click", () => {
@@ -49,7 +65,6 @@
         setTheme(current === "dark" ? "light" : "dark");
       });
     });
-    // Sync label/aria-pressed now that buttons exist in the DOM.
-    applyTheme(document.documentElement.getAttribute("data-theme") || initial);
+    syncButtons(document.documentElement.getAttribute("data-theme") || initial);
   });
 })();
