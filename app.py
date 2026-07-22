@@ -63,6 +63,7 @@ from google import genai
 from google.genai import errors as genai_errors
 
 import branding
+load_dotenv()
 import conversation_store as store
 import observability
 from auth import (
@@ -93,7 +94,7 @@ from oauth import (
 )
 from security import apply_security_headers, csrf_token_is_valid, get_or_create_csrf_token
 
-load_dotenv()
+# load_dotenv()
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 logger = logging.getLogger(__name__)
