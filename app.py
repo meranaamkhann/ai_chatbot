@@ -46,6 +46,15 @@ import time
 from datetime import timedelta
 
 from dotenv import load_dotenv
+
+# Must run before any of this project's own modules are imported below —
+# crypto.py (imported transitively via conversation_store) reads
+# ENCRYPTION_KEY at import time and raises immediately if it's missing.
+# If load_dotenv() ran after those imports, a real .env file's contents
+# wouldn't be in os.environ yet when crypto.py checks for the key, so a
+# perfectly valid .env would still fail to be picked up.
+load_dotenv()
+
 from flask import (
     Flask,
     Response,
@@ -92,8 +101,6 @@ from oauth import (
     oauth,
 )
 from security import apply_security_headers, csrf_token_is_valid, get_or_create_csrf_token
-
-load_dotenv()
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 logger = logging.getLogger(__name__)

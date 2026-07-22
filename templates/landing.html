@@ -45,9 +45,9 @@
         <p class="eyebrow">Health questions, and only health questions</p>
         <h1>Ask a health question.<br>Get a straight answer<span class="accent-dot">.</span></h1>
         <p class="hero-sub">
-          {{ brand_name }} is a focused health assistant: clear answers on symptoms, conditions,
-          medication, nutrition, and mental wellbeing — and it always knows the difference
-          between a question and an emergency.
+          {{ brand_name }} gives clear answers on symptoms, conditions, medication,
+          nutrition, and mental wellbeing — and always knows the difference between
+          a question and an emergency.
         </p>
         <div class="hero-actions">
           {% if is_logged_in %}
@@ -57,11 +57,16 @@
           {% endif %}
           <a class="btn btn-ghost" href="#safety">See how it keeps you safe</a>
         </div>
-        <ul class="hero-trust">
-          <li>Free account, no card ever</li>
-          <li>Your conversations, saved securely</li>
-          <li>Encrypted, private by default</li>
-        </ul>
+        <div class="trust-badges">
+          <div class="trust-badge">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v20M2 12h20" stroke-linecap="round"/></svg>
+            Free, always
+          </div>
+          <div class="trust-badge">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="11" width="16" height="9" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>
+            Encrypted &amp; private
+          </div>
+        </div>
       </div>
 
       <div class="hero-vitals" aria-hidden="true">
@@ -187,10 +192,10 @@
           <span class="card-index" aria-hidden="true">
             <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="11" width="16" height="9" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>
           </span>
-          <h3>Private by default</h3>
+          <h3>Yours to control</h3>
           <p>
-            Your conversations belong to your account and are encrypted. They're
-            never used to train anything, and you can delete them any time.
+            Choose how long conversations are kept, delete any chat individually,
+            or clear everything at once — right from your account settings.
           </p>
         </article>
       </div>

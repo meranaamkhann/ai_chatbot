@@ -149,29 +149,27 @@ body {
   color: var(--accent, var(--pulse-dark));
 }
 
-.hero-trust {
+.trust-badges {
   display: flex;
   flex-wrap: wrap;
-  gap: 10px 22px;
-  list-style: none;
-  padding: 0;
-  margin: 0;
-  font-size: 0.85rem;
-  color: var(--muted);
+  gap: 12px;
 }
 
-.hero-trust li {
-  display: flex;
+.trust-badge {
+  display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
+  padding: 8px 16px;
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--line);
+  background: var(--paper-raised);
+  font-size: 0.83rem;
+  font-weight: 600;
+  color: var(--ink-soft);
 }
 
-.hero-trust li::before {
-  content: "";
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--accent, var(--pulse));
+.trust-badge svg {
+  color: var(--accent, var(--pulse));
   flex-shrink: 0;
 }
 
@@ -221,7 +219,7 @@ body {
   background: var(--paper-raised);
   border: 1px solid var(--line);
   border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-card);
+  box-shadow: var(--shadow-card), 0 40px 80px -30px color-mix(in srgb, var(--accent, var(--pulse)) 35%, transparent);
   overflow: hidden;
   opacity: 0;
   transform: translateY(16px);

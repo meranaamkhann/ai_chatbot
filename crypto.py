@@ -35,6 +35,13 @@ from __future__ import annotations
 import os
 
 from cryptography.fernet import Fernet, InvalidToken
+from dotenv import load_dotenv
+
+# Defensive, not just redundant with app.py's own load_dotenv() call: this
+# module raises immediately at import time if the key is missing, so it
+# can't rely on whatever imports it having already loaded .env in the
+# right order. load_dotenv() is safe to call more than once.
+load_dotenv()
 
 _ENCRYPTION_KEY = os.getenv("ENCRYPTION_KEY")
 
