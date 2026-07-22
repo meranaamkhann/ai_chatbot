@@ -39,6 +39,14 @@ def test_same_plaintext_encrypts_differently_each_time(crypto):
 
 def test_missing_encryption_key_raises_on_import(monkeypatch):
     monkeypatch.delenv("ENCRYPTION_KEY", raising=False)
+    # crypto.py defensively calls load_dotenv() on import (see its module
+    # docstring) so it doesn't depend on being imported in a particular
+    # order. That's a good thing in production, but it means a real local
+    # .env file with ENCRYPTION_KEY set would silently repopulate the
+    # variable we just deleted, defeating this test's whole point. Patch
+    # load_dotenv to a no-op so this test genuinely exercises "the key is
+    # absent," regardless of what .env file happens to exist on disk.
+    monkeypatch.setattr("dotenv.load_dotenv", lambda *args, **kwargs: None)
     sys.modules.pop("crypto", None)
     with pytest.raises(RuntimeError, match="ENCRYPTION_KEY"):
         import crypto  # noqa: F401
