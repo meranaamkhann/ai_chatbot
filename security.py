@@ -32,9 +32,11 @@ def get_or_create_csrf_token() -> str:
 def csrf_token_is_valid(request: Request) -> bool:
     session_token = session.get("csrf_token")
     header_token = request.headers.get(CSRF_HEADER_NAME, "")
-    if not session_token or not header_token:
+    form_token = request.form.get("csrf_token", "") if request.form else ""
+    supplied_token = header_token or form_token
+    if not session_token or not supplied_token:
         return False
-    return hmac.compare_digest(session_token, header_token)
+    return hmac.compare_digest(session_token, supplied_token)
 
 
 def apply_security_headers(response: Response) -> Response:

@@ -3,6 +3,14 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
+  position: relative;
+}
+
+.theme-toggle-btn {
+  position: fixed;
+  top: 20px;
+  right: 20px;
+  z-index: 10;
 }
 
 .auth-shell {
@@ -60,6 +68,63 @@ body {
   padding: 10px 14px;
   font-size: 0.85rem;
   margin-bottom: 18px;
+}
+
+.auth-message {
+  background: var(--pulse-tint);
+  border: 1px solid var(--pulse-soft);
+  color: var(--pulse-darker);
+  border-radius: var(--radius-sm);
+  padding: 10px 14px;
+  font-size: 0.85rem;
+  margin-bottom: 18px;
+  line-height: 1.5;
+}
+
+.oauth-row {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 20px;
+}
+
+.btn-oauth {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  border: 1px solid var(--line);
+  background: var(--paper);
+  color: var(--ink);
+  padding: 11px 16px;
+  border-radius: var(--radius-sm);
+  font-size: 0.9rem;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.btn-oauth:hover {
+  background: var(--paper-sunken);
+}
+
+.auth-divider {
+  display: flex;
+  align-items: center;
+  text-align: center;
+  color: var(--muted);
+  font-size: 0.78rem;
+  margin: 0 0 18px;
+}
+
+.auth-divider::before,
+.auth-divider::after {
+  content: "";
+  flex: 1;
+  border-bottom: 1px solid var(--line);
+}
+
+.auth-divider span {
+  padding: 0 12px;
 }
 
 .auth-form {

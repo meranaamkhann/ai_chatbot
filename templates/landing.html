@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="description" content="{{ brand_name }} — {{ brand_tagline }}. A free, open-source AI assistant that only answers health questions." />
   <title>{{ brand_name }} — {{ brand_tagline }}</title>
+  <script src="{{ url_for('static', filename='theme-toggle.js') }}"></script>
   <link rel="stylesheet" href="{{ url_for('static', filename='theme.css') }}" />
   <link rel="stylesheet" href="{{ url_for('static', filename='landing.css') }}" />
   <style>:root { --accent: {{ accent_color }}; }</style>
@@ -31,6 +32,7 @@
     {% else %}
     <a class="nav-cta" href="/login">Log in</a>
     {% endif %}
+    <button type="button" data-theme-toggle class="theme-toggle-btn" aria-pressed="false">🌙 Dark</button>
   </header>
 
   <main>
@@ -52,13 +54,39 @@
           <a class="btn btn-ghost" href="#how-it-works">See how it stays in its lane</a>
         </div>
         <ul class="hero-trust">
-          <li>No account or login</li>
-          <li>No card on file, ever</li>
-          <li>Chats live only in your session</li>
+          <li>Free account, no card ever</li>
+          <li>Conversations saved to your account</li>
+          <li>Encrypted at rest</li>
         </ul>
       </div>
 
       <div class="hero-vitals" aria-hidden="true">
+        <div class="floating-blob blob-1"></div>
+        <div class="floating-blob blob-2"></div>
+
+        <div class="chat-mockup">
+          <div class="chat-mockup-header">
+            <span class="mockup-dot"></span>
+            <span class="mockup-title">{{ brand_name }}</span>
+          </div>
+          <div class="chat-mockup-body">
+            <div class="mockup-bubble mockup-user">
+              I've had a mild headache since this morning, should I be worried?
+            </div>
+            <div class="mockup-bubble mockup-bot">
+              Usually not — most morning headaches are linked to sleep, dehydration,
+              or screen time. <strong>Watch for</strong> sudden severe pain, vision
+              changes, or fever, and see a doctor if those show up.
+            </div>
+            <div class="mockup-bubble mockup-user mockup-delay-1">
+              What can I do right now?
+            </div>
+            <div class="mockup-typing mockup-delay-2">
+              <span></span><span></span><span></span>
+            </div>
+          </div>
+        </div>
+
         <svg class="pulse-line" viewBox="0 0 900 200" preserveAspectRatio="none">
           <path class="pulse-path"
             d="M0,100 L210,100 L245,40 L275,175 L305,20 L335,100 L560,100 L590,60 L615,140 L640,100 L900,100" />
@@ -66,7 +94,7 @@
       </div>
     </section>
 
-    <section class="strip" id="try-it">
+    <section class="strip reveal" id="try-it">
       <p class="strip-label">Try asking</p>
       <div class="chip-row">
         {% for prompt in suggested_prompts %}
@@ -75,7 +103,7 @@
       </div>
     </section>
 
-    <section class="how" id="how-it-works">
+    <section class="how reveal" id="how-it-works">
       <h2>Three checks run before a single reply is written</h2>
       <p class="section-sub">Every message passes through this before {{ brand_name }} is allowed to answer it.</p>
 
@@ -104,16 +132,17 @@
 
         <article class="card">
           <span class="card-index">03</span>
-          <h3>Session-only memory</h3>
+          <h3>Encrypted, account-scoped storage</h3>
           <p>
-            Conversations live in server memory for the length of your session and are never
-            written to a database or used to train anything. Close the tab, and it's gone.
+            Conversations are saved to your account so they're there next time you log in —
+            but message content is encrypted at rest, never used for training, and
+            "Clear all chats" deletes it immediately, for good.
           </p>
         </article>
       </div>
     </section>
 
-    <section class="build" id="under-the-hood">
+    <section class="build reveal" id="under-the-hood">
       <div class="build-copy">
         <h2>Built to run on nothing</h2>
         <p>
@@ -125,13 +154,13 @@
         <ul class="build-list">
           <li><span>Backend</span>Flask, session-based, zero paid dependencies</li>
           <li><span>Model</span>Gemini Flash-Lite (free tier, auto-updating alias)</li>
-          <li><span>Storage</span>In-memory, thread-safe, session-scoped</li>
+          <li><span>Storage</span>SQLite, encrypted at rest, per-account</li>
           <li><span>Hosting</span>Free tier of any standard PaaS (Render config included)</li>
         </ul>
       </div>
     </section>
 
-    <section class="faq" id="faq">
+    <section class="faq reveal" id="faq">
       <h2>Before you ask</h2>
       <dl>
         <div class="faq-item">
@@ -140,7 +169,7 @@
         </div>
         <div class="faq-item">
           <dt>Is my conversation stored anywhere?</dt>
-          <dd>Only in server memory for the life of your browser session — never in a database, and never used for training. Use "Clear all chats" any time to wipe it immediately.</dd>
+          <dd>Yes — it's saved to your account, encrypted, so it's there next time you log in. It's never used for training, and "Clear all chats" deletes it immediately and permanently.</dd>
         </div>
         <div class="faq-item">
           <dt>What happens if I ask something unrelated?</dt>

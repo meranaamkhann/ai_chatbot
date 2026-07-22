@@ -46,6 +46,70 @@
   --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
 }
 
+/* Dark theme: same tokens, same structure, different values — every
+   component built against the tokens above needs zero changes to support
+   this. Applied via [data-theme="dark"] on <html>, toggled by theme.js
+   and persisted to localStorage; falls back to the OS preference on
+   first visit via the prefers-color-scheme check below. */
+:root[data-theme="dark"] {
+  --ink: #f1f5f9;
+  --ink-soft: #cbd5e1;
+  --muted: #94a3b8;
+  --muted-soft: #64748b;
+
+  --paper: #0b1220;
+  --paper-raised: #131c2e;
+  --paper-sunken: #0e1626;
+  --line: #263349;
+  --line-soft: #1c2740;
+
+  --pulse: #2dd4bf;
+  --pulse-dark: #5eead4;
+  --pulse-darker: #99f6e4;
+  --pulse-soft: #134e4a;
+  --pulse-tint: #0f2e2b;
+
+  --danger: #f87171;
+  --danger-bg: #2a1414;
+  --danger-border: #5c2626;
+  --warn-bg: #2a2313;
+  --warn-text: #fbbf24;
+  --warn-border: #4d3d14;
+
+  --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.3), 0 10px 30px -14px rgba(0, 0, 0, 0.6);
+  --shadow-soft: 0 1px 2px rgba(0, 0, 0, 0.25);
+}
+
+@media (prefers-color-scheme: dark) {
+  /* Only applies before JS/localStorage has made an explicit choice —
+     theme.js sets data-theme explicitly on every load once a preference
+     is known, which always wins over this media query. */
+  :root:not([data-theme]) {
+    --ink: #f1f5f9;
+    --ink-soft: #cbd5e1;
+    --muted: #94a3b8;
+    --muted-soft: #64748b;
+    --paper: #0b1220;
+    --paper-raised: #131c2e;
+    --paper-sunken: #0e1626;
+    --line: #263349;
+    --line-soft: #1c2740;
+    --pulse: #2dd4bf;
+    --pulse-dark: #5eead4;
+    --pulse-darker: #99f6e4;
+    --pulse-soft: #134e4a;
+    --pulse-tint: #0f2e2b;
+    --danger: #f87171;
+    --danger-bg: #2a1414;
+    --danger-border: #5c2626;
+    --warn-bg: #2a2313;
+    --warn-text: #fbbf24;
+    --warn-border: #4d3d14;
+    --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.3), 0 10px 30px -14px rgba(0, 0, 0, 0.6);
+    --shadow-soft: 0 1px 2px rgba(0, 0, 0, 0.25);
+  }
+}
+
 * {
   box-sizing: border-box;
 }
@@ -60,6 +124,7 @@ body {
   color: var(--ink);
   background: var(--paper);
   -webkit-font-smoothing: antialiased;
+  transition: background-color 0.25s ease, color 0.25s ease;
 }
 
 a {
@@ -84,4 +149,21 @@ button {
     transition-duration: 0.001ms !important;
     scroll-behavior: auto !important;
   }
+}
+
+.theme-toggle-btn {
+  border: 1px solid var(--line);
+  background: var(--paper-raised);
+  color: var(--ink-soft);
+  border-radius: var(--radius-pill);
+  padding: 7px 14px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.theme-toggle-btn:hover {
+  border-color: var(--pulse);
+  color: var(--pulse-dark);
 }

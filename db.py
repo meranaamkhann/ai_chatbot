@@ -4,9 +4,19 @@ SQLite data layer for Sibbu.
 Why SQLite and not Postgres/a managed DB: this project's whole premise is
 $0 to run. SQLite is a single file, ships in the Python standard library,
 needs no separate service, and comfortably handles the traffic a free-tier
-single-instance deployment will ever see. The schema below is intentionally
-plain — three tables, foreign keys, no ORM — because an ORM buys you very
-little at this scale and is one more thing to explain in an interview.
+single-instance deployment will ever see.
+
+Migrations: SQLite can add nullable columns to an existing table
+(`ALTER TABLE ... ADD COLUMN`) but can't change a column's constraints
+in place. Rather than requiring you to delete your live database every
+time the schema grows, `_run_migrations()` checks what columns already
+exist (via `PRAGMA table_info`) and adds only what's missing, every time
+the app starts. This is intentionally simple — no migration framework,
+no versioned migration files — because at this scale a framework buys
+you very little and is one more thing to explain in an interview. It does
+mean migrations here can only ever *add* nullable columns, never rename
+or tighten one; a real schema framework (Alembic) is the natural next
+step if that stops being enough.
 
 Connection handling: one connection per request, opened lazily and stored
 on Flask's `g`, closed in a `teardown_appcontext` hook. sqlite3 connections
@@ -28,7 +38,7 @@ SCHEMA = """
 CREATE TABLE IF NOT EXISTS users (
     id TEXT PRIMARY KEY,
     email TEXT NOT NULL UNIQUE,
-    password_hash TEXT NOT NULL,
+    password_hash TEXT,
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
@@ -52,15 +62,56 @@ CREATE TABLE IF NOT EXISTS messages (
 );
 
 CREATE INDEX IF NOT EXISTS idx_messages_conversation ON messages(conversation_id, id);
+
+CREATE TABLE IF NOT EXISTS password_reset_tokens (
+    token_hash TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    expires_at TEXT NOT NULL,
+    used INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
 """
+
+# (table, column, sqlite type/default) — added via ALTER TABLE if missing.
+# Kept separate from SCHEMA because SQLite can't express "add this column
+# only if it doesn't already exist" inside CREATE TABLE for existing tables.
+_COLUMN_MIGRATIONS = [
+    ("users", "oauth_provider", "TEXT"),
+    ("users", "oauth_id", "TEXT"),
+    ("users", "retention_days", "INTEGER"),
+    ("conversations", "summary", "TEXT"),
+    ("conversations", "summary_through_id", "INTEGER"),
+]
+
+
+def _existing_columns(conn: sqlite3.Connection, table: str) -> set[str]:
+    return {row[1] for row in conn.execute(f"PRAGMA table_info({table})").fetchall()}
+
+
+def _run_migrations(conn: sqlite3.Connection) -> None:
+    for table, column, coltype in _COLUMN_MIGRATIONS:
+        if column not in _existing_columns(conn, table):
+            conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {coltype}")
+
+    # Partial unique index: two NULL oauth_ids don't collide (every
+    # password-only account has oauth_provider/oauth_id = NULL), but two
+    # accounts can't claim the same (provider, id) pair.
+    conn.execute(
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_users_oauth "
+        "ON users(oauth_provider, oauth_id) WHERE oauth_provider IS NOT NULL"
+    )
+    conn.commit()
 
 
 def init_db() -> None:
-    """Create tables if they don't exist yet. Safe to call on every app startup."""
+    """Create tables if they don't exist yet and run column migrations.
+    Safe to call on every app startup, including against an existing
+    database created by an earlier version of this schema."""
     conn = sqlite3.connect(DB_PATH)
     try:
         conn.executescript(SCHEMA)
         conn.commit()
+        _run_migrations(conn)
     finally:
         conn.close()
 

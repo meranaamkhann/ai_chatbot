@@ -6,9 +6,10 @@ polite redirect instead of a generated answer, and anything resembling a
 medical emergency gets a fixed safety message instead of a normal reply.
 
 Built to run for **$0**: a free Gemini API key, a free PaaS tier (Render
-config included), and only one small, free, open-source added dependency (`tenacity`, for
-retry logic) — no CDN scripts, no external fonts, no paid database, no
-analytics.
+config included), and only small, free, open-source added dependencies
+(`tenacity` for retries, `cryptography` for encryption at rest, `Authlib`
+for optional OAuth) — no CDN scripts, no external fonts, no paid database,
+no analytics.
 
 See **[AUDIT.md](./AUDIT.md)** for a full, itemized account of what was
 wrong with the previous version of this project and exactly what changed
@@ -21,30 +22,35 @@ changelog.
 
 ```
 app.py                  Flask app: routes, request handling, SSE streaming
-auth.py                 Signup/login/logout, password hashing, login_required
-db.py                   SQLite connection + schema (users, conversations, messages)
+auth.py                 Signup/login/logout, password reset, OAuth linking, redirect safety
+db.py                   SQLite connection + schema + in-place migrations
 crypto.py               Fernet encryption for message content/titles at rest
-conversation_store.py   SQLite-backed conversation data access, keyed by user
-gemini_client.py        Retry/backoff wrapper around Gemini calls
+conversation_store.py   Conversation data access: persistence, summarization, retention, deletion
+gemini_client.py        Retry/backoff wrapper + rolling-summary generation
+mailer.py                SMTP password-reset emails (free via Gmail app password)
+oauth.py                 Optional Google/GitHub login via Authlib
 observability.py        Structured per-request logging (latency, topic, request id)
 domain_guard.py         Two-stage topic classifier (keyword pass + LLM fallback)
-security.py             CSRF double-submit tokens + security headers
+security.py             CSRF double-submit tokens (API + HTML forms) + security headers
 branding.py             White-label config (name/tagline/colors/copy via env vars)
 eval/
-  eval_dataset.json      59 labeled examples for measuring guard accuracy
+  eval_dataset.json      69 labeled examples incl. jailbreak/prompt-injection attempts
   run_eval.py             Confusion matrix + precision/recall report
 templates/
-  landing.html           Marketing page at /
-  auth.html               Shared login/signup page
+  landing.html           Marketing page at /, with animated chat mockup
+  auth.html               Login / signup / forgot-password / reset-password
   chat.html                Chat app shell at /app
+  settings.html            Retention setting + account deletion
 static/
-  theme.css               Shared design tokens
+  theme.css               Shared design tokens (light + dark)
+  theme-toggle.js          Light/dark theme toggle, persisted
   landing.css / landing.js
-  auth.css
+  auth.css / settings.css
   chat.css / chat.js       Streaming, sidebar, composer UX
   markdown.js              Dependency-free markdown renderer for bot replies
-tests/                   pytest suite (58 tests): guard logic, auth flow, per-user
-                         data isolation, CSRF, streaming, retry logic, DB persistence
+tests/                   pytest suite (111 tests): guard logic, auth flow, password reset,
+                         OAuth linking, redirect safety, retention/purge, summarization,
+                         per-user data isolation, CSRF, streaming, retry logic, encryption
 ```
 
 ## Routes
@@ -55,8 +61,13 @@ tests/                   pytest suite (58 tests): guard logic, auth flow, per-us
 | GET/POST | `/signup` | Create an account |
 | GET/POST | `/login` | Log in |
 | POST | `/logout` | Log out |
+| GET/POST | `/forgot-password` | Request a password reset email |
+| GET/POST | `/reset-password/<token>` | Set a new password from a reset link |
+| GET | `/oauth/<provider>/login` | Start Google/GitHub OAuth (if configured) |
+| GET | `/oauth/<provider>/callback` | Finish OAuth, log the user in |
 | GET | `/app` | Chat application (login required) |
-| GET | `/health` | Liveness probe |
+| GET/POST | `/settings` | Conversation retention setting + delete account |
+| GET | `/health` | Liveness probe — actually checks database connectivity |
 | GET | `/api/conversations` | List this user's conversations |
 | POST | `/api/conversations` | Start a new conversation |
 | GET | `/api/conversations/<id>` | Fetch one conversation's history |
@@ -103,7 +114,7 @@ pip install pytest
 pytest -q
 ```
 
-63 tests, no network calls (the Gemini client is mocked), each test run
+111 tests, no network calls (the Gemini client is mocked), each test run
 gets its own throwaway SQLite database. Runs automatically on every push
 via GitHub Actions (`.github/workflows/tests.yml`).
 
@@ -123,10 +134,29 @@ tier:
 The same `Procfile` (`gunicorn --worker-class gthread --workers 1 --threads
 8 --timeout 120 app:app`) works unmodified on Railway, Fly.io, or any other
 PaaS with a free tier — it's one process with several threads, which
-matters because streaming responses need threads and the in-memory store
-(intentionally) isn't safe to run across more than one process. See
-**"Scaling beyond one process"** in `AUDIT.md` for the upgrade path once a
-single free instance isn't enough.
+matters because streaming responses need threads, and `--workers 1` keeps
+every request hitting the same SQLite file on the same instance rather
+than several processes contending for it. See **"Scaling beyond one
+process"** in `AUDIT.md` for the upgrade path once a single free instance
+isn't enough.
+
+## Optional: password reset emails and Google/GitHub login
+
+Both work out of the box in a reduced form — the app runs fine with
+neither configured. To enable them fully:
+
+**Password reset emails** — set `SMTP_HOST`, `SMTP_USERNAME`,
+`SMTP_PASSWORD` in `.env` (a Gmail account + an "app password" works
+free — Google Account → Security → 2-Step Verification → App passwords).
+Without these, reset links are logged instead of emailed, which is fine
+for local development.
+
+**Google/GitHub login** — each requires creating an OAuth app in that
+provider's own console; see `oauth.py`'s module docstring for the exact
+steps. Set `GOOGLE_CLIENT_ID`/`GOOGLE_CLIENT_SECRET` and/or
+`GITHUB_CLIENT_ID`/`GITHUB_CLIENT_SECRET` in `.env`. A provider's login
+button only appears on the login/signup pages once both of its variables
+are set — nothing breaks or looks unfinished if you skip this.
 
 ## Rebranding (white-label)
 

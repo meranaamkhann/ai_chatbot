@@ -4,6 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>{{ brand_name }} — {{ brand_tagline }}</title>
+  <script src="{{ url_for('static', filename='theme-toggle.js') }}"></script>
   <link rel="stylesheet" href="{{ url_for('static', filename='theme.css') }}" />
   <link rel="stylesheet" href="{{ url_for('static', filename='chat.css') }}" />
   <style>:root { --accent: {{ accent_color }}; }</style>
@@ -41,7 +42,9 @@
 
       <div class="sidebar-footer">
         <p class="sidebar-user" title="{{ user_email }}">{{ user_email }}</p>
+        <button type="button" data-theme-toggle class="text-btn theme-toggle-btn-inline" aria-pressed="false">🌙 Dark mode</button>
         <button id="clear-all-btn" type="button" class="text-btn">Clear all chats</button>
+        <a href="/settings" class="text-btn">Settings</a>
         <a href="/" class="text-btn">← Back home</a>
         <form method="POST" action="/logout">
           <button type="submit" class="text-btn logout-btn">Log out</button>

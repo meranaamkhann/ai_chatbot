@@ -302,3 +302,164 @@ and nothing would flag it before Render tried to deploy it.
 and pull request via GitHub Actions, which is free for a repo at this
 usage level. Uses dummy (not real) API keys since every test already
 mocks the Gemini client and makes zero real network calls.
+
+---
+
+## Round 4: accounts hardening, OAuth, retention, summarization, themes, landing page overhaul
+
+This round works through the person's own priority list end-to-end: light/dark
+themes, password reset, optional Google/GitHub login, a genuinely upgraded
+landing page, user-controlled retention/deletion, rolling conversation
+summarization, tighter edge-case handling in chat, and a focused security
+pass. Each item below names the file(s) changed and, where relevant, the
+specific bug or gap it closes — not just the feature added.
+
+### 18. Password reset (item 2 on the list)
+`auth.py` (`create_password_reset_token`, `reset_password_with_token`),
+`mailer.py`, `templates/auth.html` (forgot/reset modes), new
+`password_reset_tokens` table in `db.py`. Tokens are single-use,
+hour-lifetime, stored hashed (not raw) so DB read access alone doesn't
+hand out a working reset link. The forgot-password form returns an
+identical message whether or not the email has an account — see auth.py's
+docstring on why enumeration-by-timing/response is a real, if narrow,
+information leak worth closing. Email delivery is plain SMTP (works free
+with a Gmail app password) with a graceful log-instead-of-send fallback
+if SMTP isn't configured, so local dev never needs real email setup.
+
+### 19. Google + GitHub OAuth (item 3, phone/SMS dropped — see below)
+`oauth.py`, wired into `app.py`'s `/oauth/<provider>/login` and
+`/oauth/<provider>/callback`, via Authlib (free, open-source). Buttons on
+the login/signup pages only render when a provider's credentials are
+actually set — an installation with nothing configured behaves exactly
+like the password-only version. Accounts are matched/linked by email
+(`find_or_create_oauth_user`) so someone who signed up with a password
+can later also log in via Google using the same address, rather than
+silently creating a second account.
+**Phone/SMS login was explicitly dropped, not forgotten:** every SMS
+gateway (Twilio etc.) charges per message with no meaningful free tier,
+which directly conflicts with the project's $0-to-run requirement set at
+the very start of this build. Named here rather than silently omitted.
+
+### 20. Light/dark themes (item 1)
+`static/theme.css` (dark-mode token overrides under `[data-theme="dark"]`,
+plus an OS-preference fallback via `prefers-color-scheme` before any
+explicit choice is made), `static/theme-toggle.js` (persists to
+localStorage, applied before first paint to avoid a flash of the wrong
+theme). Every component was already built against CSS custom properties
+rather than hardcoded colors, which is what makes this a pure token swap
+with zero changes needed to any component's own CSS.
+
+### 21. Landing page overhaul (item 4)
+`templates/landing.html` + `static/landing.css` + `static/landing.js`.
+Replaced the flat pulse-line graphic with an animated chat-window mockup
+(staged bubble animations, a typing indicator) that actually shows what
+the product does rather than an abstract line, added floating decorative
+blobs, and wired scroll-reveal animations via `IntersectionObserver` (with
+a plain fallback if that API is unavailable) so sections animate in as
+the page is scrolled rather than all appearing at once.
+**This round also fixed a real accuracy bug in the existing landing copy**,
+caught by actually loading the live deployed page rather than assuming:
+the hero trust list, the "Session-only memory" card, the tech-stack list,
+and the FAQ answer all still described the old in-memory, account-less
+architecture from before Round 2/3 added login and persistent storage.
+That's not a cosmetic issue — it's the page actively telling visitors the
+opposite of what the app does. All four spots were rewritten to describe
+the real, current architecture (accounts, encrypted persistent storage).
+
+### 22. User-controlled retention and deletion (item 5)
+`conversation_store.py` (`get_retention_days`, `set_retention_days`,
+`purge_expired_for_user`, `delete_account`), new `/settings` page
+(`templates/settings.html`). Users choose "keep forever" (default) or
+auto-delete after 7/30/90 days; expired conversations are purged
+opportunistically on `/app` load rather than via a background scheduler,
+since a free single-instance deployment has no scheduled-job
+infrastructure — documented as a real, named limitation (a conversation
+past its window might survive a little past the exact cutoff if the user
+doesn't reopen the app) rather than claimed to be exact. Account deletion
+is permanent, confirmed client-side via a JS `confirm()`, and relies on
+the existing `ON DELETE CASCADE` foreign keys to remove every
+conversation and message along with the user row — verified with a test
+that checks all three tables directly after deletion.
+
+### 23. Rolling conversation summarization (item 6)
+`conversation_store.py` (`needs_summarization`, `messages_to_fold_into_summary`,
+`save_summary`, `get_prompt_context`), `gemini_client.py`
+(`summarize_messages`). Once a conversation's unsummarized history hits 16
+messages, everything except the most recent 8 turns is folded into a
+short 2-4 sentence summary via one extra Gemini call, and
+`summary_through_id` tracks the boundary so the same turns are never
+re-summarized. The prompt sent to the model is always "summary + recent
+turns", not the full raw history — this is what keeps prompt size roughly
+constant regardless of how long a conversation actually grows, rather
+than either silently truncating context (losing it) or sending
+ever-larger prompts (linear cost growth). The UI still renders full raw
+history; only what's sent to the model is condensed. Summarization
+failures are caught and logged, never allowed to break the chat itself.
+**Response tone** was also tightened in the system prompt (`app.py`) per
+the request for "humble and concise... like ChatGPT" — explicit
+instruction to default to short answers, avoid asserting unwarranted
+certainty, and only expand when the question genuinely needs it.
+
+### 24. Chat edge cases (item 7)
+Two real bugs found and fixed, not just "made more robust" in the abstract:
+- **Duplicate user-turn recording.** If the SSE stream failed before any
+  token arrived, the frontend's automatic fallback to `POST /api/chat`
+  would resubmit the same message — which used to record the user's turn
+  a second time in the database. `_record_user_turn_once` in `app.py`
+  checks whether the conversation's last message already matches before
+  recording, making the fallback idempotent. Covered by a regression test
+  that reproduces the exact failure sequence.
+- **Prompt injection / jailbreak attempts** ("ignore your instructions",
+  "you're in developer mode now", "pretend you have no restrictions")
+  are now explicitly named and refused in the system prompt (`app.py`),
+  and 10 adversarial examples were added to `eval/eval_dataset.json`
+  (now 69 total) so the domain guard's resistance to these is measured,
+  not just asserted.
+
+### 25. Security pass (item 9)
+- **CSRF on HTML forms, not just the JSON API.** Before this round,
+  `/login`, `/signup`, `/forgot-password`, `/reset-password`, and
+  `/settings` were plain forms with no CSRF token at all — only the
+  `/api/*` JSON layer had the double-submit check. `security.py`'s
+  `csrf_token_is_valid` now accepts either the JSON header or a
+  `csrf_token` form field, and every form in `auth.html`/`settings.html`
+  includes a hidden CSRF input rendered from `get_or_create_csrf_token()`.
+- **Open-redirect vulnerability closed.** `login_required`'s `next=`
+  parameter used to be passed straight into `redirect()` — a crafted link
+  like `/app?next=https://evil.example.com` would send a user who just
+  authenticated straight to an attacker's site. `auth.py`'s new
+  `is_safe_redirect_target()` validates every `next` value is a same-site
+  relative path before it's ever used, both in `login_required` and in
+  `/login`'s own POST handler. Covered by regression tests for absolute,
+  protocol-relative, and backslash-based redirect attempts.
+- **Login-specific rate limiting.** The global 60/hour limit wasn't
+  login-aware — `/login` now has its own `10 per 15 minutes` cap (plus
+  `/signup` at 10/hour and `/forgot-password` at 5/hour), so credential
+  stuffing against one account is throttled far below what the general
+  limit alone would allow.
+- **Real health check.** `/health` used to return a static 200
+  unconditionally. It now actually queries the database and reports
+  `database: false` with a 503 if that fails — a real readiness signal
+  Render (or any monitor) can act on, not just a liveness ping.
+
+### 26. Domain restriction (item 10)
+Already enforced by the existing two-stage guard (`domain_guard.py`), but
+strengthened in two ways this round: the system prompt in `app.py` now
+explicitly names and refuses persona/role manipulation attempts rather
+than relying on the base instruction alone, and `eval/eval_dataset.json`
+gained 10 labeled jailbreak-style examples specifically to measure (not
+just claim) resistance to "ignore your instructions", fake-authority
+framing ("I'm a doctor, so..."), and roleplay-based bypass attempts.
+
+### What's still explicitly not done after this round
+- Phone/SMS login — dropped by design, see #19.
+- No CAPTCHA/bot defense on signup — a real gap for a public-facing
+  signup form, not addressed here.
+- No breach-password check (e.g. against Have I Been Pwned's range API)
+  on signup/reset — password strength is still just a length minimum.
+- No token/cost-per-request logging — still on the list from the
+  previous flaw audit, not covered in this round.
+- No pagination on conversation lists — fine at current scale, a real
+  limit past a few hundred conversations per user.
+- Retention purge is opportunistic (on page load), not a true background
+  job — named explicitly in #22, not hidden.

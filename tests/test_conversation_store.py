@@ -107,3 +107,126 @@ def test_persists_across_reconnect(ctx, monkeypatch):
     history = ctx.get_history(conv["id"], limit=None)
     assert len(history) == 1
     assert history[0]["content"] == "does this survive a restart?"
+
+
+# ---------------------------------------------------------------------------
+# Rolling summarization
+# ---------------------------------------------------------------------------
+
+def test_needs_summarization_false_below_trigger(ctx):
+    conv = ctx.new_conversation("user-1")
+    for i in range(ctx.SUMMARY_TRIGGER_COUNT - 1):
+        ctx.record_turn(conv["id"], "user" if i % 2 == 0 else "assistant", f"message {i}")
+    assert ctx.needs_summarization(conv["id"]) is False
+
+
+def test_needs_summarization_true_at_trigger(ctx):
+    conv = ctx.new_conversation("user-1")
+    for i in range(ctx.SUMMARY_TRIGGER_COUNT):
+        ctx.record_turn(conv["id"], "user" if i % 2 == 0 else "assistant", f"message {i}")
+    assert ctx.needs_summarization(conv["id"]) is True
+
+
+def test_messages_to_fold_excludes_recent_window(ctx):
+    conv = ctx.new_conversation("user-1")
+    for i in range(ctx.SUMMARY_TRIGGER_COUNT):
+        ctx.record_turn(conv["id"], "user" if i % 2 == 0 else "assistant", f"message {i}")
+
+    to_fold, through_id = ctx.messages_to_fold_into_summary(conv["id"])
+    assert through_id is not None
+    assert len(to_fold) == ctx.SUMMARY_TRIGGER_COUNT - ctx.RECENT_WINDOW_FOR_PROMPT
+    # The most recent messages should NOT be in the fold list.
+    folded_contents = {m["content"] for m in to_fold}
+    assert f"message {ctx.SUMMARY_TRIGGER_COUNT - 1}" not in folded_contents
+
+
+def test_save_and_read_summary(ctx):
+    conv = ctx.new_conversation("user-1")
+    ctx.record_turn(conv["id"], "user", "first message")
+    ctx.save_summary(conv["id"], "User discussed a headache.", through_id=1)
+
+    summary, recent = ctx.get_prompt_context(conv["id"])
+    assert summary == "User discussed a headache."
+
+
+def test_get_prompt_context_only_includes_messages_after_summary(ctx):
+    conv = ctx.new_conversation("user-1")
+    ctx.record_turn(conv["id"], "user", "old message")  # id 1
+    ctx.record_turn(conv["id"], "assistant", "old reply")  # id 2
+    ctx.save_summary(conv["id"], "Summary of old exchange.", through_id=2)
+    ctx.record_turn(conv["id"], "user", "new message")  # id 3
+
+    summary, recent = ctx.get_prompt_context(conv["id"])
+    assert summary == "Summary of old exchange."
+    assert [m["content"] for m in recent] == ["new message"]
+
+
+# ---------------------------------------------------------------------------
+# Retention / purge
+# ---------------------------------------------------------------------------
+
+def test_retention_default_is_none_keep_forever(ctx):
+    assert ctx.get_retention_days("user-1") is None
+
+
+def test_set_and_get_retention_days(ctx):
+    ctx.set_retention_days("user-1", 30)
+    assert ctx.get_retention_days("user-1") == 30
+
+
+def test_purge_expired_is_noop_when_retention_unset(ctx):
+    conv = ctx.new_conversation("user-1")
+    ctx.record_turn(conv["id"], "user", "hello")
+    deleted = ctx.purge_expired_for_user("user-1")
+    assert deleted == 0
+    assert ctx.owns_conversation("user-1", conv["id"])
+
+
+def test_purge_expired_deletes_old_conversations(ctx):
+    import db as db_module
+
+    conv = ctx.new_conversation("user-1")
+    ctx.set_retention_days("user-1", 7)
+
+    # Backdate updated_at to 30 days ago, well past the 7-day retention.
+    conn = db_module.get_db()
+    conn.execute(
+        "UPDATE conversations SET updated_at = datetime('now', '-30 days') WHERE id = ?", (conv["id"],)
+    )
+    conn.commit()
+
+    deleted = ctx.purge_expired_for_user("user-1")
+    assert deleted == 1
+    assert not ctx.owns_conversation("user-1", conv["id"])
+
+
+def test_purge_expired_keeps_recent_conversations(ctx):
+    conv = ctx.new_conversation("user-1")
+    ctx.set_retention_days("user-1", 30)
+    deleted = ctx.purge_expired_for_user("user-1")
+    assert deleted == 0
+    assert ctx.owns_conversation("user-1", conv["id"])
+
+
+# ---------------------------------------------------------------------------
+# Account deletion
+# ---------------------------------------------------------------------------
+
+def test_delete_account_cascades_to_conversations_and_messages(ctx):
+    import db as db_module
+
+    conv = ctx.new_conversation("user-1")
+    ctx.record_turn(conv["id"], "user", "hello")
+
+    ctx.delete_account("user-1")
+
+    conn = db_module.get_db()
+    user_row = conn.execute("SELECT 1 FROM users WHERE id = ?", ("user-1",)).fetchone()
+    conv_row = conn.execute("SELECT 1 FROM conversations WHERE id = ?", (conv["id"],)).fetchone()
+    msg_rows = conn.execute(
+        "SELECT 1 FROM messages WHERE conversation_id = ?", (conv["id"],)
+    ).fetchall()
+
+    assert user_row is None
+    assert conv_row is None
+    assert msg_rows == []

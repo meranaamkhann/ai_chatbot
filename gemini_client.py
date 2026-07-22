@@ -61,3 +61,25 @@ def start_stream_with_retry(client, **kwargs):
         return first_chunk, iterator
 
     return _attempt()
+
+
+_SUMMARY_INSTRUCTION = (
+    "Summarize the following health-related conversation in 2-4 short "
+    "sentences, preserving any specific symptoms, conditions, or "
+    "advice already given so the conversation can continue naturally. "
+    "Write the summary itself only, with no preamble."
+)
+
+
+@_retry_policy
+def summarize_messages(client, model: str, messages: list[dict]) -> str:
+    """Condenses older turns into a short running summary — used by
+    conversation_store's rolling summarization so a long chat doesn't
+    silently lose context once it falls outside the recent-turns window."""
+    transcript = "\n".join(f"{m['role'].capitalize()}: {m['content']}" for m in messages)
+    response = client.models.generate_content(
+        model=model,
+        contents=f"Conversation to summarize:\n{transcript}",
+        config={"system_instruction": _SUMMARY_INSTRUCTION},
+    )
+    return (response.text or "").strip()
