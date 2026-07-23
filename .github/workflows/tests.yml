@@ -37,5 +37,5 @@ jobs:
           # not valid. Never put a real API key in a workflow file.
           GEMINI_API_KEY: test-key-for-ci
           FLASK_SECRET_KEY: test-secret-for-ci-not-for-real-use
-          ENCRYPTION_KEY: tkGtljKdQPNaeYmt3KQr--k-_13LdA-qc0tUjoeDpLY=
+          ENCRYPTION_KEY: uLa-Y94p7ElNf-Phs-aWuQBTqZAjACFU7ZjVW7XEwhc=
         run: python -m pytest -q
