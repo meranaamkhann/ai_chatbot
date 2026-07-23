@@ -559,3 +559,41 @@ Same list as Round 4's closing note — password reset was covered in
 Round 4, but CAPTCHA/bot defense on signup, breach-password checking,
 token/cost-per-request logging, and conversation-list pagination remain
 open, unaffected by this round's fixes.
+
+---
+
+## Round 6: theme persistence bug, password visibility toggle
+
+### 31. Dark mode "reverting" after browser Back/Forward navigation
+**The bug, as reported:** turning dark mode on, navigating around, switching
+back to light, then navigating with the browser's Back button could make
+the theme flip unexpectedly on the next click. Root cause: browsers can
+restore a page from their back/forward cache (bfcache) with its DOM
+exactly as it was when you left it — including a `[data-theme]` attribute
+that's now stale, if the theme was changed on a *different* page in the
+meantime. The previous `theme-toggle.js` trusted that DOM attribute
+directly as "the current theme" when deciding which way a click should
+toggle, so a click right after a cache-restored navigation could compute
+the wrong direction.
+**Fix:** every toggle decision and page-show now reads from `localStorage`
+(the actual source of truth) rather than the DOM attribute, and a
+`pageshow` listener re-applies the correct theme on every page view,
+including bfcache restores — not just on first load. A `storage` event
+listener was also added so changing the theme in one tab updates any
+other open tab for the same site.
+
+### 32. No password visibility (eye) toggle
+Added to every password field across `/login`, `/signup`, and
+`/reset-password`: `static/password-toggle.js` (new, small, dependency-free)
+flips an input between `type="password"`/`type="text"` and swaps an
+eye/eye-off SVG icon via a CSS class — no library, consistent with the
+project's zero-external-script constraint.
+
+### Not a bug: Google/GitHub login buttons not appearing
+This is working as designed, not a defect — see `oauth.py`'s module
+docstring. Each provider's button only renders once *you* create an OAuth
+app in that provider's own developer console and set the resulting
+`GOOGLE_CLIENT_ID`/`GOOGLE_CLIENT_SECRET` or
+`GITHUB_CLIENT_ID`/`GITHUB_CLIENT_SECRET` in `.env` — Anthropic/Claude has
+no ability to register those credentials on your behalf, since they're
+tied to your own Google Cloud / GitHub account.

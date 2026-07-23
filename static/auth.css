@@ -148,6 +148,8 @@ body {
   color: var(--ink);
   background: var(--paper);
   margin-bottom: 16px;
+  width: 100%;
+  box-sizing: border-box;
 }
 
 .auth-form input:focus {
@@ -155,6 +157,48 @@ body {
   border-color: var(--accent, var(--pulse));
   box-shadow: 0 0 0 3px var(--pulse-soft);
   background: var(--paper-raised);
+}
+
+.password-field {
+  position: relative;
+  margin-bottom: 16px;
+}
+
+.password-field input {
+  margin-bottom: 0;
+  padding-right: 42px;
+}
+
+.password-toggle {
+  position: absolute;
+  right: 4px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: transparent;
+  border: none;
+  padding: 8px;
+  cursor: pointer;
+  color: var(--muted);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-sm);
+}
+
+.password-toggle:hover {
+  color: var(--ink-soft);
+}
+
+.password-toggle .icon-eye-off {
+  display: none;
+}
+
+.password-toggle.is-visible .icon-eye {
+  display: none;
+}
+
+.password-toggle.is-visible .icon-eye-off {
+  display: inline-flex;
 }
 
 .field-hint {
